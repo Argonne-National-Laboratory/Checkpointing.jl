@@ -2,10 +2,14 @@ using Test
 using Checkpointing
 using LinearAlgebra
 
-x = zeros(10)
-x .= 2.0
+@testset "Testing Revolve..." begin
+	global steps = 50
+	global checkpoints = 7
+	global verbose = 0
+	include("../examples/printaction.jl")
+	revolve = main(steps, checkpoints)
 
-@test norm(x) ≈ mynorm(x)
-
-a = Revolve(0,0)
-@test_broken init(a)
+	@test revolve.numfwd == 105
+	@test revolve.numstore == 28
+	@test revolve.numinv == 177
+end
