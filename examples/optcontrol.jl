@@ -137,18 +137,14 @@ macro checkpoint(alg, forloop)
                     $(forloop.args[2])
                 end
             elseif (next_action.actionflag == Checkpointing.firstuturn)
-                F_H[1] = F[1]
-                F_H[2] = F[2]
+                F_H .= F
                 advance(F_final,F_H,t,h)
-                L[1] = 0.0
-                L[2] = 1.0
+                L .= [0, 1]
                 t = 1.0-h
-                L_H[1] = L[1]
-                L_H[2] = L[2]
+                L_H .= L
                 adjoint(L_H,F_H,L,t,h)
             elseif (next_action.actionflag == Checkpointing.uturn)
-                L_H[1] = L[1]
-                L_H[2] = L[2]
+                L_H .= L
                 adjoint(L_H,F,L,t,h)
                 t = t - h
                 if haskey(storemap,next_action.iteration-1-1)
