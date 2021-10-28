@@ -1,3 +1,8 @@
+# This is a Julia version of Solution of the optimal control problem 
+# based on code written by Andrea Walther. See:
+# Walther, Andrea, and Narayanan, Sri Hari Krishna. Extending the Binomial Checkpointing 
+# Technique for Resilience. United States: N. p., 2016. https://www.osti.gov/biblio/1364654.
+
 using Checkpointing
 
 function func_U(t)          
