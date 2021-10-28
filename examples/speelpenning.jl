@@ -1,7 +1,7 @@
 using Enzyme
 
 function speelpenning(x)
-	reduce(*, x)
+    reduce(*, x)
 end
 
 n = 10

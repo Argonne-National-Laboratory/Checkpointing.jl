@@ -1,11 +1,11 @@
-# This is a Julia version of Solution of the optimal control problem 
+# This is a Julia version of Solution of the optimal control problem
 # based on code written by Andrea Walther. See:
-# Walther, Andrea, and Narayanan, Sri Hari Krishna. Extending the Binomial Checkpointing 
+# Walther, Andrea, and Narayanan, Sri Hari Krishna. Extending the Binomial Checkpointing
 # Technique for Resilience. United States: N. p., 2016. https://www.osti.gov/biblio/1364654.
 
 using Checkpointing
 
-function func_U(t)          
+function func_U(t)
     e = 2.7182818
     return 2.0*((e^(3.0*t))-(e^3))/((e^(3.0*t/2.0))*(2.0+(e^3)))
 end
@@ -24,22 +24,22 @@ function func_adj(BF, X)
     return BX
 end
 
-function opt_sol(Y,t)          
-    e = 2.7182818     
+function opt_sol(Y,t)
+    e = 2.7182818
     Y[1] = (2.0*e^(3.0*t)+e^3)/(e^(3.0*t/2.0)*(2.0+e^3))
     Y[2] = (2.0*e^(3.0*t)-e^(6.0-3.0*t)-2.0+e^6)/((2.0+e^3)^2)
     return
 end
 
-function opt_lambda(L,t)          
-    e = 2.7182818      
+function opt_lambda(L,t)
+    e = 2.7182818
     L[1] = (2.0*e^(3-t)-2.0*e^(2.0*t))/(e^(t/2.0)*(2+e^3))
     L[2] = 1.0
     return
 end
 
-function advance(F,F_H,t,h)          
-    k0 = func(F_H,t) 
+function advance(F,F_H,t,h)
+    k0 = func(F_H,t)
     G = Array{Float64, 1}(undef, 2)
     G[1] = F_H[1] + h/2.0*k0[1]
     G[2] = F_H[2] + h/2.0*k0[2]
@@ -119,7 +119,54 @@ function header()
         return
 end
 
-function main(info::Int, snaps::Int, steps::Int)
+
+macro checkpoint(alg, forloop)
+    # esc(args)
+    ex = quote
+        storemap = Dict{Int32,Int32}()
+        check = 0
+        F_Check = Array{Float64, 2}(undef, 3, snaps)
+        while true
+            next_action = next_action!($alg)
+            if (next_action.actionflag == Checkpointing.store)
+                check = check+1
+                storemap[next_action.iteration-1]=check
+                store(F,F_Check,t,check)
+            elseif (next_action.actionflag == Checkpointing.forward)
+                for j= next_action.startiteration:(next_action.iteration - 1)
+                    $(forloop.args[2])
+                end
+            elseif (next_action.actionflag == Checkpointing.firstuturn)
+                F_H[1] = F[1]
+                F_H[2] = F[2]
+                advance(F_final,F_H,t,h)
+                L[1] = 0.0
+                L[2] = 1.0
+                t = 1.0-h
+                L_H[1] = L[1]
+                L_H[2] = L[2]
+                adjoint(L_H,F_H,L,t,h)
+            elseif (next_action.actionflag == Checkpointing.uturn)
+                L_H[1] = L[1]
+                L_H[2] = L[2]
+                adjoint(L_H,F,L,t,h)
+                t = t - h
+                if haskey(storemap,next_action.iteration-1-1)
+                    delete!(storemap,next_action.iteration-1-1)
+                    check=check-1
+                end
+            elseif (next_action.actionflag == Checkpointing.restore)
+                t = restore(F,F_Check,storemap[next_action.iteration-1])
+            elseif next_action.actionflag == Checkpointing.done
+                break
+            end
+        end
+        # $args
+    end
+    esc(ex)
+end
+
+function main(steps, snaps, info)
     header()
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
@@ -130,55 +177,21 @@ function main(info::Int, snaps::Int, steps::Int)
 
     revolve = Revolve(steps, snaps; verbose=info)
     h = 1.0/steps
-    t = 0.0
-    F = Array{Float64, 1}(undef, 2)
-    F_H = Array{Float64, 1}(undef, 2)
     F_final = Array{Float64, 1}(undef, 2)
-    F_Check = Array{Float64, 2}(undef, 3, snaps)
     L = Array{Float64, 1}(undef, 2)
     L_H = Array{Float64, 1}(undef, 2)
-    F[1] = 1.0
-    F[2] = 0.0
-    check = Int64(0)
-    storemap = Dict{Int32,Int32}()
-    while true
-        next_action = next_action!(revolve)
-        if (next_action.actionflag == Checkpointing.store)
-            check = check+1
-            storemap[next_action.iteration-1]=check
-            store(F,F_Check,t,check)
-        elseif (next_action.actionflag == Checkpointing.forward)
-            for j= next_action.startiteration:(next_action.iteration - 1)
-                F_H[1] = F[1]
-                F_H[2] = F[2]
-                advance(F,F_H,t,h)
-                t += h
-            end 
-        elseif (next_action.actionflag == Checkpointing.firstuturn)
-            F_H[1] = F[1]
-            F_H[2] = F[2]
-            advance(F_final,F_H,t,h)
-            L[1] = 0.0
-            L[2] = 1.0
-            t = 1.0-h
-            L_H[1] = L[1]
-            L_H[2] = L[2]
-            adjoint(L_H,F_H,L,t,h)
-        elseif (next_action.actionflag == Checkpointing.uturn)
-            L_H[1] = L[1]
-            L_H[2] = L[2]
-            adjoint(L_H,F,L,t,h)
-            t = t - h
-            if haskey(storemap,next_action.iteration-1-1)
-                delete!(storemap,next_action.iteration-1-1)
-                check=check-1
-            end
-        elseif (next_action.actionflag == Checkpointing.restore)
-            t = restore(F,F_Check,storemap[next_action.iteration-1])
-        elseif next_action.actionflag == Checkpointing.done
-            break
-        end
+
+    t = 0.0
+    F = [1.0, 0.0]
+    F_H = similar(F)
+
+    @checkpoint revolve for i in 1:steps
+        F_H[1] = F[1]
+        F_H[2] = F[2]
+        advance(F,F_H,t,h)
+        t += h
     end
+
     F_opt = Array{Float64, 1}(undef, 2)
     L_opt = Array{Float64, 1}(undef, 2)
     opt_sol(F_opt,1.0)
@@ -188,7 +201,5 @@ function main(info::Int, snaps::Int, steps::Int)
     println("y_1 (1)  = " , F_final[1] , "  y_2 (1)  = " , F_final[2] , " \n\n")
     println("l_1*(0)  = " , L_opt[1] , "  l_2*(0)  = " , L_opt[2])
     println("l_1 (0)  = " , L[1]     , "  sl_2 (0)  = " , L[2] , " ")
-    return
+    return F_opt, F_final, L_opt, L
 end
-
-main(3,3,10)
