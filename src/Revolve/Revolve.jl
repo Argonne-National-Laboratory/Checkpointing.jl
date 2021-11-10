@@ -45,9 +45,11 @@ end
     firstuturned::Bool
     stepof::Vector{Int}
     verbose::Int
+    fstore::Function
+    frestore::Function
 end
 
-function Revolve(steps::Int, checkpoints::Int; anActionInstance::Union{Nothing,Action} = nothing, bundle_::Union{Nothing,Int} = nothing, verbose::Int = 0)
+function Revolve(steps::Int, checkpoints::Int, fstore::Function, frestore::Function; anActionInstance::Union{Nothing,Action} = nothing, bundle_::Union{Nothing,Int} = nothing, verbose::Int = 0)
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
@@ -93,7 +95,7 @@ function Revolve(steps::Int, checkpoints::Int; anActionInstance::Union{Nothing,A
             @info " overhead factor        : $(predfwdcnt/steps)"
         end
     end
-    return Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose)
+    return Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
 end
 
 function adjust(::Revolve)
