@@ -208,6 +208,34 @@ function main(steps, snaps, info)
         t += h
     end
 
+
+    # Enzyme crashes while differentiating this fully inlined function implementation
+    # function tobedifferentiated(F, F_H)
+    #     e = exp(1)
+    #     for i in 1:steps
+    #         F_H[1] = F[1]
+    #         F_H[2] = F[2]
+    #         # k0 = func(F_H,t)
+    #             func_U = 2.0*((e^(3.0*t))-(e^3))/((e^(3.0*t/2.0))*(2.0+(e^3)))
+    #             k0 = copy(F_H)
+    #             k0[1] = 0.5*F_H[1]+ func_U
+    #             k0[2] = F_H[1]*F_H[1]+0.5*(func_U*func_U)
+    #         G = copy(F_H)
+    #         G[1] = F_H[1] + h/2.0*k0[1]
+    #         G[2] = F_H[2] + h/2.0*k0[2]
+    #         # k1 = func(G,t+h/2.0)
+    #             t_ = t+h/2.0
+    #             func_U = 2.0*((e^(3.0*t_))-(e^3))/((e^(3.0*t_/2.0))*(2.0+(e^3)))
+    #             k1 = copy(G)
+    #             k1[1] = 0.5*G[1]+ func_U
+    #             k1[2] = G[1]*G[1]+0.5*(func_U*func_U)
+    #         F[1] = F_H[1] + h*k1[1]
+    #         F[2] = F_H[2] + h*k1[2]
+    #         t += h
+    #     end
+    # end
+    # autodiff(tobedifferentiated, Duplicated(F, L), Duplicated(F_H, L_H))
+
     F_opt = Array{Float64, 1}(undef, 2)
     L_opt = Array{Float64, 1}(undef, 2)
     opt_sol(F_opt,1.0)
