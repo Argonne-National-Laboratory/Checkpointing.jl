@@ -2,34 +2,6 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-"""
-    Action
-
-    none: no action
-    store: store a checkpoint now equivalent to TAKESHOT in Alg. 79
-    restore: restore a checkpoint now equivalent to RESTORE in Alg. 79
-    forward: execute iteration(s) forward equivalent to ADVANCE in Alg. 79
-    firstuturn: tape iteration(s); optionally leave to return later;  and (upon return) do the adjoint(s) equivalent to FIRSTTURN in Alg. 799
-    uturn: tape iteration(s) and do the adjoint(s) equivalent to YOUTURN in Alg. 79
-    done: we are done with adjoining the loop equivalent to the `terminate` enum value in Alg. 79
-"""
-@enum ActionFlag begin
-    none
-	store
-	restore
-	forward
-	firstuturn
-	uturn
-	done
-end
-
-@with_kw struct Action
-	actionflag::ActionFlag
-	iteration::Int
-	startiteration::Int
-	cpnum::Int
-end
-
 @with_kw mutable struct Revolve <: Scheme
     steps::Int
     bundle::Int
@@ -85,8 +57,10 @@ function Revolve(steps::Int, checkpoints::Int, fstore::Function, frestore::Funct
     firstuturned    = false
     stepof = Vector{Int}(undef, acp+1)
 
+    revolve = Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+
     if verbose > 0
-        predfwdcnt = forwardcount(steps, acp, bundle)
+        predfwdcnt = forwardcount(revolve)
         if predfwdcnt == -1
             error("Revolve: error returned by  revolve::forwardcount")
         else
@@ -95,7 +69,7 @@ function Revolve(steps::Int, checkpoints::Int, fstore::Function, frestore::Funct
             @info " overhead factor        : $(predfwdcnt/steps)"
         end
     end
-    return Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+    return revolve
 end
 
 function adjust(::Revolve)
@@ -271,16 +245,16 @@ function guess(revolve::Revolve; bundle::Union{Nothing, Int} = nothing)::Int
             checkpoints = 1
             reps = 1
             s = 0
-            while chkrange(checkpoints+s, reps+s) > bSteps
+            while chkrange(revolve, checkpoints+s, reps+s) > bSteps
                 s -= 1
             end
-            while chkrange(checkpoints+s, reps+s) < bSteps
+            while chkrange(revolve, checkpoints+s, reps+s) < bSteps
                 s += 1
             end
             checkpoints += s
             reps += s
             s = -1
-            while chkrange(checkpoints, reps) >= bSteps
+            while chkrange(revolve, checkpoints, reps) >= bSteps
                 if checkpoints > reps
                     checkpoints -= 1
                     s = 0
@@ -301,12 +275,12 @@ function guess(revolve::Revolve; bundle::Union{Nothing, Int} = nothing)::Int
     return guess
 end
 
-function factor(steps, checkpoints, bundle::Union{Nothing,Int} = nothing)
+function factor(revolve::Revolve, steps, checkpoints, bundle::Union{Nothing,Int} = nothing)
     b = 1
     if !isa(bundle, Nothing)
         b = bundle
     end
-    f = forwardcount(steps, checkpoints, b)
+    f = forwardcount(revolve)
     if f == -1
         error("Revolve: error returned by forwardcount")
     else
@@ -315,7 +289,7 @@ function factor(steps, checkpoints, bundle::Union{Nothing,Int} = nothing)
     return factor
 end
 
-function chkrange(ss, tt)
+function chkrange(::Revolve, ss, tt)
     ret = Int(0)
     res = 1.
     if tt < 0 || ss < 0
@@ -338,7 +312,10 @@ function chkrange(ss, tt)
     return ret
 end
 
-function forwardcount(steps, checkpoints, bundle)
+function forwardcount(revolve::Revolve)
+    checkpoints = revolve.acp
+    bundle      = revolve.bundle
+    steps       = revolve.steps
     if checkpoints < 0
         error("Revolve forwardcount: error: checkpoints < 0")
     elseif steps < 1

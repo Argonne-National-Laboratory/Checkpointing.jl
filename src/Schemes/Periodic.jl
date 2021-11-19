@@ -1,24 +1,7 @@
-# This provides the efunctionality of periodic checkpointing. It uses the 
+# This provides the efunctionality of periodic checkpointing. It uses the
 # terminology of Revolve; see Alg. 799 published by Griewank et al.
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
-
-@enum ActionFlag begin
-    none
-	store
-	restore
-	forward
-	firstuturn
-	uturn
-	done
-end
-
-@with_kw struct Action
-	actionflag::ActionFlag
-	iteration::Int
-	startiteration::Int
-	cpnum::Int
-end
 
 @with_kw mutable struct Periodic <: Scheme
     steps::Int
@@ -47,7 +30,7 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
         anActionInstance.iteration  = 0
         anActionInstance.cpNum      = 0
     end
-    bundle = 1 
+    bundle = 1
     #=
     !isa(bundle_, Nothing) ? bundle = bundle_ : bundle = 1
     if bundle < 1 || bundle > steps
@@ -82,7 +65,7 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
     stepof = Vector{Int}(undef, acp+1)
     period          = steps / checkpoints
 
-    forwardcount(steps, acp, bundle)
+    forwardcount(Periodic(), steps, acp, bundle)
     return Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
 end
 
@@ -102,7 +85,7 @@ function next_action!(periodic::Periodic)::Action
     end=#
     prevcurriter = curriter
     numinv += 1
-    if (!firstuturned) 
+    if (!firstuturned)
         if (curriter == (acp-1)*period)
             if (storedorrestored)
                 actionflag = firstuturn
@@ -149,7 +132,7 @@ function next_action!(periodic::Periodic)::Action
         iteration = (curriter + 1) * bundle
     else
         iteration = curriter * bundle
-    end   
+    end
     if verbose > 2
         if actionflag == forward
             @info " run forward iterations    [$startiteration, $(iteration - 1)]"
@@ -172,7 +155,7 @@ function next_action!(periodic::Periodic)::Action
 
 end
 
-function forwardcount(steps, checkpoints, bundle)
+function forwardcount(::Periodic, steps, checkpoints, bundle)
     if checkpoints < 0
         error("Periodic forwardcount: error: checkpoints < 0")
     elseif steps < 1
