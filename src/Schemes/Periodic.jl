@@ -63,9 +63,9 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
     prevcend        = 0
     firstuturned    = false
     stepof = Vector{Int}(undef, acp+1)
-    period          = steps / checkpoints
+    period          = div(steps, checkpoints)
 
-    periodic = Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+    periodic = Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, period, firstuturned, stepof, verbose, fstore, frestore)
 
     forwardcount(periodic)
     return periodic
@@ -77,6 +77,7 @@ function next_action!(periodic::Periodic)::Action
     iteration      = 0
     startiteration = 0
     cpnum          = 0
+    storedorrestored = false
     #=if numinv == 0
         # first invocation
         for v in stepof
@@ -84,13 +85,13 @@ function next_action!(periodic::Periodic)::Action
         end
         stepof[1] = curriter - 1
     end=#
-    prevcurriter = curriter
-    numinv += 1
-    if (!firstuturned)
-        if (curriter == (acp-1)*period)
+    prevcurriter = periodic.curriter
+    periodic.numinv += 1
+    if (!periodic.firstuturned)
+        if (periodic.curriter == (periodic.acp-1)*periodic.period)
             if (storedorrestored)
                 actionflag = firstuturn
-                firstuturned = true
+                periodic.firstuturned = true
             else
                 actionflag = store
                 storedorrestored = true
@@ -101,20 +102,20 @@ function next_action!(periodic::Periodic)::Action
             else
                 actionflag = store
                 storedorrestored = true
-                curriter == curriter + period
+                periodic.curriter == periodic.curriter + periodic.period
             end
         end
     else
-        if (curriter == 0) && (actionflag == adjoint)
+        if (periodic.curriter == 0) && (actionflag == adjoint)
             actionflag = done
-        elseif (curriter == 0)
+        elseif (periodic.curriter == 0)
             if (storedorrestored)
                 actionflag = uturn
                 storedorrestored = false
             else
                 actionflag = restore
                 storedorrestored = true
-                curriter == curriter - period
+                periodic.curriter == periodic.curriter - periodic.period
             end
         else
             if (storedorrestored)
@@ -126,15 +127,15 @@ function next_action!(periodic::Periodic)::Action
             end
         end
     end
-    startiteration = prevcurriter * bundle
+    startiteration = prevcurriter * periodic.bundle
     if actionflag == firstuturn
-        iteration = curriter * bundle + tail
+        iteration = periodic.curriter * periodic.bundle + periodic.tail
     elseif actionflag == uturn
-        iteration = (curriter + 1) * bundle
+        iteration = (periodic.curriter + 1) * periodic.bundle
     else
-        iteration = curriter * bundle
+        iteration = periodic.curriter * periodic.bundle
     end
-    if verbose > 2
+    if periodic.verbose > 2
         if actionflag == forward
             @info " run forward iterations    [$startiteration, $(iteration - 1)]"
         elseif actionflag == restore
@@ -146,17 +147,17 @@ function next_action!(periodic::Periodic)::Action
             @info " uturn for iterations      [$startiteration, $(iteration - 1)]"
         end
     end
-    if (verbose > 1) && (actionflag == store)
+    if (periodic.verbose > 1) && (actionflag == store)
         @info " store input of iteration $iteration  "
     end
-    cpnum=rwcp
+    cpnum=periodic.rwcp
 
     return Action(actionflag, iteration, startiteration, cpnum)
 
 end
 
 function forwardcount(periodic::Periodic)
-    if periodic.checkpoints < 0
+    if periodic.acp < 0
         error("Periodic forwardcount: error: checkpoints < 0")
     elseif periodic.steps < 1
         error("Periodic forwardcount: error: steps < 1")
