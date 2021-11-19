@@ -165,7 +165,7 @@ macro checkpoint(alg, forloop)
     esc(ex)
 end
 
-function main(steps, snaps, info)
+function optcontrol(scheme, steps)
     header()
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
@@ -174,21 +174,7 @@ function main(steps, snaps, info)
     println("INFO = 3 -> calculate approximate solution + all information ")
     println(" ENTER:   STEPS, SNAPS, INFO \n")
 
-    function store(F_H, F_C,t, i)
-        F_C[1,i] = F_H[1]
-        F_C[2,i] = F_H[2]
-        F_C[3,i] = t
-        return
-    end
 
-    function restore(F_H, F_C, i)
-        F_H[1] = F_C[1,i]
-        F_H[2] = F_C[2,i]
-        t = F_C[3,i]
-        return t
-    end
-
-    revolve = Revolve(steps, snaps, store, restore; verbose=info)
     h = 1.0/steps
     # F_final = Array{Float64, 1}(undef, 2)
     L = Array{Float64, 1}(undef, 2)
@@ -201,7 +187,7 @@ function main(steps, snaps, info)
     # set_input(revolve, F)
     # set_output(revolve, F)
 
-    @checkpoint revolve for i in 1:steps
+    @checkpoint scheme for i in 1:steps
         F_H[1] = F[1]
         F_H[2] = F[2]
         advance(F,F_H,t,h)
