@@ -34,8 +34,8 @@ end
 	cpnum::Int
 end
 
-include("Revolve/Revolve.jl")
-include("Revolve/Periodic.jl")
+include("Schemes/Revolve.jl")
+include("Schemes/Periodic.jl")
 
 export Revolve, guess, factor, next_action!, ActionFlag
 
