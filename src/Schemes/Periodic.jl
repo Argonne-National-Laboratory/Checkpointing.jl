@@ -3,7 +3,7 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-@with_kw mutable struct Periodic <: Scheme
+mutable struct Periodic <: Scheme
     steps::Int
     bundle::Int
     tail::Int
@@ -66,8 +66,8 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
     period          = steps / checkpoints
 
     periodic = Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
-    
-    forwardcount(periodic, steps, acp, bundle)
+
+    forwardcount(periodic)
     return periodic
 end
 
@@ -77,7 +77,6 @@ function next_action!(periodic::Periodic)::Action
     iteration      = 0
     startiteration = 0
     cpnum          = 0
-    @unpack_Periodic periodic
     #=if numinv == 0
         # first invocation
         for v in stepof
@@ -151,18 +150,17 @@ function next_action!(periodic::Periodic)::Action
         @info " store input of iteration $iteration  "
     end
     cpnum=rwcp
-    @pack_Periodic! periodic
 
     return Action(actionflag, iteration, startiteration, cpnum)
 
 end
 
-function forwardcount(::Periodic, steps, checkpoints, bundle)
-    if checkpoints < 0
+function forwardcount(periodic::Periodic)
+    if periodic.checkpoints < 0
         error("Periodic forwardcount: error: checkpoints < 0")
-    elseif steps < 1
+    elseif periodic.steps < 1
         error("Periodic forwardcount: error: steps < 1")
-    elseif bundle < 1
+    elseif periodic.bundle < 1
         error("Periodic forwardcount: error: bundle < 1")
     end
 end

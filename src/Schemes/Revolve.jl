@@ -2,7 +2,7 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-@with_kw mutable struct Revolve <: Scheme
+mutable struct Revolve <: Scheme
     steps::Int
     bundle::Int
     tail::Int
@@ -82,72 +82,71 @@ function next_action!(revolve::Revolve)::Action
     iteration      = 0
     startiteration = 0
     cpnum          = 0
-    @unpack_Revolve revolve
-    if numinv == 0
+    if revolve.numinv == 0
         # first invocation
-        for v in stepof
+        for v in revolve.stepof
             v = 0
         end
-        stepof[1] = cstart - 1
+        revolve.stepof[1] = revolve.cstart - 1
     end
-    prevcstart = cstart
-    numinv += 1
-    rwcptest = (rwcp == -1)
+    prevcstart = revolve.cstart
+    revolve.numinv += 1
+    rwcptest = (revolve.rwcp == -1)
     if !rwcptest
-       rwcptest = stepof[rwcp+1] != cstart
+       rwcptest = revolve.stepof[revolve.rwcp+1] != revolve.cstart
     end
-    if (cend - cstart) == 0
+    if (revolve.cend - revolve.cstart) == 0
        # nothing in current subrange
-        if (rwcp == -1) || (cstart == stepof[1])
+        if (revolve.rwcp == -1) || (revolve.cstart == revolve.stepof[1])
             # we are done
-            rwcp = rwcp - 1
-            if verbose > 2
+            revolve.rwcp = revolve.rwcp - 1
+            if revolve.verbose > 2
                 @info "done"
             end
-            if verbose > 0
+            if revolve.verbose > 0
                 @info "summary:"
-                @info " overhead forward steps: $numfwd"
-                @info " CP stores             : $numstore"
-                @info " NextAction calls      : $numinv"
+                @info " overhead forward steps: $(revolve.numfwd)"
+                @info " CP stores             : $(revolve.numstore)"
+                @info " NextAction calls      : $(revolve.numinv)"
             end
             actionflag = done
         else
-           cstart = stepof[rwcp+1]
-           prevcend = cend
+           revolve.cstart = revolve.stepof[revolve.rwcp+1]
+           revolve.prevcend = revolve.cend
            actionflag = restore
         end
-    elseif (cend - cstart) == 1
-        cend = cend - 1
-        prevcend = cend
-        if (rwcp >= 0) && (stepof[rwcp + 1] == cstart)
-            rwcp -= 1
+    elseif (revolve.cend - revolve.cstart) == 1
+        revolve.cend = revolve.cend - 1
+        revolve.prevcend = revolve.cend
+        if (revolve.rwcp >= 0) && (revolve.stepof[revolve.rwcp + 1] == revolve.cstart)
+            revolve.rwcp -= 1
         end
-        if !firstuturned
+        if !revolve.firstuturned
             actionflag = firstuturn
-            firstuturned = true
+            revolve.firstuturned = true
         else
             actionflag = uturn
         end
     elseif rwcptest
-        rwcp += 1
-        if rwcp + 1 > acp
+        revolve.rwcp += 1
+        if revolve.rwcp + 1 > revolve.acp
             error("Revolve: insufficient allowed checkpoints")
         else
-            stepof[rwcp+1] = cstart
-            numstore += 1
-            prevcend = cend
+            revolve.stepof[revolve.rwcp+1] = revolve.cstart
+            revolve.numstore += 1
+            revolve.prevcend = revolve.cend
             actionflag = store
         end
-    elseif (prevcend < cend) && (acp == rwcp + 1)
+    elseif (revolve.prevcend < revolve.cend) && (revolve.acp == revolve.rwcp + 1)
             error("Revolve: insufficient allowed checkpoints")
     else
-        availcp = acp - rwcp
+        availcp = revolve.acp - revolve.rwcp
         if availcp < 1
             error("Revolve: insufficient allowed checkpoints")
         else
             reps = 0
             range = 1
-            while range < (cend - cstart)
+            while range < (revolve.cend - revolve.cstart)
                 reps = reps + 1
                 range = range * (reps + availcp) / reps
             end
@@ -172,33 +171,34 @@ function next_action!(revolve::Revolve)::Action
             else
                 bino5 = 1
             end
-            if (cend - cstart) <= (bino1 + bino3)
-                cstart = trunc(Int, cstart + bino4)
-            elseif (cend - cstart) >= (range-bino5)
-                cstart = trunc(Int, cstart + bino1)
+            if (revolve.cend - revolve.cstart) <= (bino1 + bino3)
+                revolve.cstart = trunc(Int, revolve.cstart + bino4)
+            elseif (revolve.cend - revolve.cstart) >= (range-bino5)
+                revolve.cstart = trunc(Int, revolve.cstart + bino1)
             else
-                cstart = trunc(Int, cend - bino2 - bino3)
+                revolve.cstart = trunc(Int, revolve.cend - bino2 - bino3)
             end
-            if cstart == prevcstart
-                cstart = prevcstart + 1
+            if revolve.cstart == prevcstart
+                revolve.cstart = prevcstart + 1
             end
-            if cstart == steps
-                numfwd = numfwd + ((cstart - 1) - prevcstart) * bundle + tail
+            if revolve.cstart == revolve.steps
+                revolve.numfwd = (revolve.numfwd + ((revolve.cstart - 1) - prevcstart)
+                                    * revolve.bundle + revolve.tail)
             else
-                numfwd = numfwd + (cstart - prevcstart) * bundle
+                revolve.numfwd = revolve.numfwd + (revolve.cstart - prevcstart) * revolve.bundle
             end
             actionflag = forward
         end
     end
-    startiteration = prevcstart * bundle
+    startiteration = prevcstart * revolve.bundle
     if actionflag == firstuturn
-        iteration = cstart * bundle + tail
+        iteration = revolve.cstart * revolve.bundle + revolve.tail
     elseif actionflag == uturn
-        iteration = (cstart + 1) * bundle
+        iteration = (revolve.cstart + 1) * revolve.bundle
     else
-        iteration = cstart * bundle
+        iteration = revolve.cstart * revolve.bundle
     end
-    if verbose > 2
+    if revolve.verbose > 2
         if actionflag == forward
             @info " run forward iterations    [$startiteration, $(iteration - 1)]"
         elseif actionflag == restore
@@ -210,32 +210,30 @@ function next_action!(revolve::Revolve)::Action
             @info " uturn for iterations      [$startiteration, $(iteration - 1)]"
         end
     end
-    if (verbose > 1) && (actionflag == store)
+    if (revolve.verbose > 1) && (actionflag == store)
         @info " store input of iteration $iteration  "
     end
-    cpnum=rwcp
-    @pack_Revolve! revolve
+    cpnum=revolve.rwcp
 
     return Action(actionflag, iteration, startiteration, cpnum)
 
 end
 
 function guess(revolve::Revolve; bundle::Union{Nothing, Int} = nothing)::Int
-    @unpack_Revolve revolve
     b=1
-    bSteps=steps
+    bSteps=revolve.steps
     if !isa(bundle, Nothing)
         b=bundle
     end
-    if steps < 1
+    if revolve.steps < 1
         error("Revolve: error: steps < 1")
     elseif b<1
         error("Revolve: error: bundle < 1")
     else
         if b > 1
-            tail = mod(bSteps, b)
+            revolve.tail = mod(bSteps, b)
             bSteps = div(bSteps, b)
-            if tail > 0
+            if revolve.tail > 0
                 bSteps = bSteps + 1
             end
         end
