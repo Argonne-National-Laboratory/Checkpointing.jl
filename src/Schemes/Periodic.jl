@@ -65,8 +65,10 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
     stepof = Vector{Int}(undef, acp+1)
     period          = steps / checkpoints
 
-    forwardcount(Periodic(), steps, acp, bundle)
-    return Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+    periodic = Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+    
+    forwardcount(periodic, steps, acp, bundle)
+    return periodic
 end
 
 function next_action!(periodic::Periodic)::Action

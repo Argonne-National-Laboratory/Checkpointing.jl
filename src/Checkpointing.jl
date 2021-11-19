@@ -37,6 +37,6 @@ end
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 
-export Revolve, guess, factor, next_action!, ActionFlag
+export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 
 end
