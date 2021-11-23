@@ -10,9 +10,6 @@ mutable struct Periodic <: Scheme
     acp::Int
     curriter::Int
     cend::Int
-    numfwd::Int
-    numinv::Int
-    numstore::Int
     rwcp::Int
     prevcend::Int
     period::Int
@@ -36,9 +33,6 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
     tail   = 0
     cend            = steps
     acp             = checkpoints
-    numfwd          = 0
-    numinv          = 0
-    numstore        = 0
     rwcp            = -1
     prevcend        = 0
     firstuturned    = false
@@ -46,7 +40,7 @@ function Periodic(steps::Int, checkpoints::Int, fstore::Function, frestore::Func
     period          = div(steps, checkpoints)
     storedorrestored = false
 
-    periodic = Periodic(steps, bundle, tail, acp, curriter, cend, numfwd, numinv, numstore, rwcp, prevcend, period, firstuturned, stepof, storedorrestored, verbose, fstore, frestore)
+    periodic = Periodic(steps, bundle, tail, acp, curriter, cend, rwcp, prevcend, period, firstuturned, stepof, storedorrestored, verbose, fstore, frestore)
 
     forwardcount(periodic)
     return periodic
