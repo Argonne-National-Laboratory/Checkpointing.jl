@@ -102,65 +102,97 @@ function header()
         println("*                                                                        *")
         println("**************************************************************************")
 
-        println("\n \n Using Binomial Offline Checkpointing for the approximate solution: \n")
         return
 end
 
-
 macro checkpoint(alg, forloop)
-    # esc(args)
-    ex = quote
-        storemap = Dict{Int32,Int32}()
-        check = 0
-        F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-        F_final = Array{Float64, 1}(undef, 2)
-        while true
-            next_action = next_action!($alg)
-            if (next_action.actionflag == Checkpointing.store)
-                check = check+1
-                storemap[next_action.iteration-1]=check
-                $alg.fstore(F,F_Check,t,check)
-            elseif (next_action.actionflag == Checkpointing.forward)
-                for j= next_action.startiteration:(next_action.iteration - 1)
+    ex = quote        
+        if(isa($alg, Revolve))
+            storemap = Dict{Int32,Int32}()
+            check = 0
+            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
+            F_final = Array{Float64, 1}(undef, 2)
+            while true
+                next_action = next_action!($alg)
+                if (next_action.actionflag == Checkpointing.store)
+                    check = check+1
+                    storemap[next_action.iteration-1]=check
+                    $alg.fstore(F,F_Check,t,check)
+                elseif (next_action.actionflag == Checkpointing.forward)
+                    for j= next_action.startiteration:(next_action.iteration - 1)
+                        $(forloop.args[2])
+                    end
+                elseif (next_action.actionflag == Checkpointing.firstuturn)
                     $(forloop.args[2])
+                    F_final .= F
+                    L .= [0, 1]
+                    t = 1.0-h
+                    L_H .= L
+                    function tobedifferentiated(F,F_H)
+                        $(forloop.args[2])
+                        return nothing
+                    end
+                    # @show typeof(F)
+                    # @show length(F)
+                    # @show typeof(L)
+                    # @show length(L)
+                    # @show typeof(F_H)
+                    # @show length(F_H)
+                    # @show typeof(L_H)
+                    # @show length(L_H)
+                    # autodiff(tobedifferentiated, Duplicated(F, L), Duplicated(F_H, L_H))
+                    adjoint(F_H ,L_H, F, L, t, h)
+                elseif (next_action.actionflag == Checkpointing.uturn)
+                    L_H .= L
+                    F_H .= F
+                    adjoint(F_H, L_H, F, L, t, h)
+                    t = t - h
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                        check=check-1
+                    end
+                elseif (next_action.actionflag == Checkpointing.restore)
+                    t = $alg.frestore(F,F_Check,storemap[next_action.iteration-1])
+                elseif next_action.actionflag == Checkpointing.done
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                        check=check-1
+                    end
+                    break
                 end
-            elseif (next_action.actionflag == Checkpointing.firstuturn)
-                $(forloop.args[2])
-                F_final .= F
-                L .= [0, 1]
-                t = 1.0-h
-                L_H .= L
-                function tobedifferentiated(F,F_H)
-                    $(forloop.args[2])
-                    return nothing
-                end
-                # @show typeof(F)
-                # @show length(F)
-                # @show typeof(L)
-                # @show length(L)
-                # @show typeof(F_H)
-                # @show length(F_H)
-                # @show typeof(L_H)
-                # @show length(L_H)
-                # autodiff(tobedifferentiated, Duplicated(F, L), Duplicated(F_H, L_H))
-                adjoint(F_H ,L_H, F, L, t, h)
-            elseif (next_action.actionflag == Checkpointing.uturn)
-                L_H .= L
-                F_H .= F
-                adjoint(F_H, L_H, F, L, t, h)
-                t = t - h
-                if haskey(storemap,next_action.iteration-1-1)
-                    delete!(storemap,next_action.iteration-1-1)
-                    check=check-1
-                end
-            elseif (next_action.actionflag == Checkpointing.restore)
-                t = $alg.frestore(F,F_Check,storemap[next_action.iteration-1])
-            elseif next_action.actionflag == Checkpointing.done
-                break
             end
+            F .= F_final
+        elseif(isa($alg, Periodic))
+            check = 0
+            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
+            F_final = Array{Float64, 1}(undef, 2)
+            F_Check_inner = Array{Any, 2}(undef, 3, $alg.period)
+            for i = 1:$alg.acp
+                $alg.fstore(F,F_Check,t,i)
+                for j= (i-1)*$alg.period: (i)*$alg.period-1
+                    $(forloop.args[2])
+                end
+            end
+            F_final .= F
+            L .= [0, 1]
+            t = 1.0-h
+            L_H .= L
+            for i = $alg.acp:-1:1
+                t = $alg.frestore(F,F_Check,i)
+                for j= 1:$alg.period
+                    $alg.fstore(F,F_Check_inner,t,j)
+                    $(forloop.args[2])
+                end
+                for j= $alg.period:-1:1
+                    t = $alg.frestore(F,F_Check_inner,j)
+                    L_H .= L
+                    F_H .= F
+                    adjoint(F_H, L_H, F, L, t, h)
+                    t = t - h
+                end
+            end
+            F .= F_final
         end
-        F .= F_final
-        # $args
     end
     esc(ex)
 end
