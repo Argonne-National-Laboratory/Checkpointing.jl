@@ -5,6 +5,7 @@
 
 using Checkpointing
 using Enzyme
+using ReverseDiff
 
 function func_U(t)
     e = exp(1)
@@ -130,23 +131,30 @@ macro checkpoint(alg, forloop)
                 L .= [0, 1]
                 t = 1.0-h
                 L_H .= L
-                function tobedifferentiated(F,F_H)
+                lF = length(F)
+                lF_H = length(F_H)
+                function tobedifferentiated_enzyme(F, F_H)
+                    # F = similar(inputs)
+                    # F_H = similar(inputs)
+                    # F = copy(inputs)
                     $(forloop.args[2])
                     return nothing
                 end
-                # @show typeof(F)
-                # @show length(F)
-                # @show typeof(L)
-                # @show length(L)
-                # @show typeof(F_H)
-                # @show length(F_H)
-                # @show typeof(L_H)
-                # @show length(L_H)
-                # autodiff(tobedifferentiated, Duplicated(F, L), Duplicated(F_H, L_H))
+                function tobedifferentiated_reversediff(inputs)
+                    F = similar(inputs)
+                    F_H = similar(inputs)
+                    F = copy(inputs)
+                    $(forloop.args[2])
+                    outputs = F
+                    return outputs
+                end
+                # autodiff(tobedifferentiated_enzyme, Duplicated(F, L), Duplicated(F_H, L_H))
+                # ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
+
                 adjoint(F_H ,L_H, F, L, t, h)
             elseif (next_action.actionflag == Checkpointing.uturn)
                 L_H .= L
-                F_H .= F
+                F_H = copy(F)
                 adjoint(F_H, L_H, F, L, t, h)
                 t = t - h
                 if haskey(storemap,next_action.iteration-1-1)
@@ -195,15 +203,14 @@ function main(steps, snaps, info)
     L_H = Array{Float64, 1}(undef, 2)
 
     t = 0.0
-    F_H = [1.0, 0.0]
-    F = copy(F_H)
+    F = [1.0, 0.0]
+    F_H = [0.0, 0.0]
 
     # set_input(revolve, F)
     # set_output(revolve, F)
 
     @checkpoint revolve for i in 1:steps
-        F_H[1] = F[1]
-        F_H[2] = F[2]
+        F_H[:] = F[:]
         advance(F,F_H,t,h)
         t += h
     end
@@ -247,3 +254,5 @@ function main(steps, snaps, info)
     println("l_1 (0)  = " , L[1]     , "  sl_2 (0)  = " , L[2] , " ")
     return F_opt, F, L_opt, L
 end
+
+# main(10,3,3)
