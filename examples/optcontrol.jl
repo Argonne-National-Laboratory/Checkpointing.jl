@@ -103,77 +103,109 @@ function header()
         println("*                                                                        *")
         println("**************************************************************************")
 
-        println("\n \n Using Binomial Offline Checkpointing for the approximate solution: \n")
         return
 end
 
-
 macro checkpoint(alg, forloop)
-    # esc(args)
     ex = quote
-        storemap = Dict{Int32,Int32}()
-        check = 0
-        F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-        F_final = Array{Float64, 1}(undef, 2)
-        while true
-            next_action = next_action!($alg)
-            if (next_action.actionflag == Checkpointing.store)
-                check = check+1
-                storemap[next_action.iteration-1]=check
-                $alg.fstore(F,F_Check,t,check)
-            elseif (next_action.actionflag == Checkpointing.forward)
-                for j= next_action.startiteration:(next_action.iteration - 1)
+        if isa($alg, Revolve)
+            storemap = Dict{Int32,Int32}()
+            check = 0
+            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
+            F_final = Array{Float64, 1}(undef, 2)
+            while true
+                next_action = next_action!($alg)
+                if (next_action.actionflag == Checkpointing.store)
+                    check = check+1
+                    storemap[next_action.iteration-1]=check
+                    $alg.fstore(F,F_Check,t,check)
+                elseif (next_action.actionflag == Checkpointing.forward)
+                    for j= next_action.startiteration:(next_action.iteration - 1)
+                        $(forloop.args[2])
+                    end
+                elseif (next_action.actionflag == Checkpointing.firstuturn)
                     $(forloop.args[2])
-                end
-            elseif (next_action.actionflag == Checkpointing.firstuturn)
-                $(forloop.args[2])
-                F_final .= F
-                L .= [0, 1]
-                t = 1.0-h
-                L_H .= L
-                lF = length(F)
-                lF_H = length(F_H)
-                function tobedifferentiated_enzyme(F, F_H)
-                    # F = similar(inputs)
-                    # F_H = similar(inputs)
-                    # F = copy(inputs)
-                    $(forloop.args[2])
-                    return nothing
-                end
-                function tobedifferentiated_reversediff(inputs)
-                    F = similar(inputs)
-                    F_H = similar(inputs)
-                    F = copy(inputs)
-                    $(forloop.args[2])
-                    outputs = F
-                    return outputs
-                end
-                # autodiff(tobedifferentiated_enzyme, Duplicated(F, L), Duplicated(F_H, L_H))
-                # ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
+                    F_final .= F
+                    L .= [0, 1]
+                    t = 1.0-h
+                    L_H .= L
+                    lF = length(F)
+                    lF_H = length(F_H)
+                    function tobedifferentiated_enzyme(F, F_H)
+                        # F = similar(inputs)
+                        # F_H = similar(inputs)
+                        # F = copy(inputs)
+                        $(forloop.args[2])
+                        return nothing
+                    end
+                    function tobedifferentiated_reversediff(inputs)
+                        F = similar(inputs)
+                        F_H = similar(inputs)
+                        F = copy(inputs)
+                        $(forloop.args[2])
+                        outputs = F
+                        return outputs
+                    end
+                    # autodiff(tobedifferentiated_enzyme, Duplicated(F, L), Duplicated(F_H, L_H))
+                    # ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
 
-                adjoint(F_H ,L_H, F, L, t, h)
-            elseif (next_action.actionflag == Checkpointing.uturn)
-                L_H .= L
-                F_H = copy(F)
-                adjoint(F_H, L_H, F, L, t, h)
-                t = t - h
-                if haskey(storemap,next_action.iteration-1-1)
-                    delete!(storemap,next_action.iteration-1-1)
-                    check=check-1
+                    adjoint(F_H ,L_H, F, L, t, h)
+                elseif (next_action.actionflag == Checkpointing.uturn)
+                    L_H .= L
+                    F_H = copy(F)
+                    adjoint(F_H, L_H, F, L, t, h)
+                    t = t - h
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                        check=check-1
+                    end
+                elseif (next_action.actionflag == Checkpointing.restore)
+                    t = $alg.frestore(F,F_Check,storemap[next_action.iteration-1])
+                elseif next_action.actionflag == Checkpointing.done
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                        check=check-1
+                    end
+                    break
                 end
-            elseif (next_action.actionflag == Checkpointing.restore)
-                t = $alg.frestore(F,F_Check,storemap[next_action.iteration-1])
-            elseif next_action.actionflag == Checkpointing.done
-                break
             end
+            F .= F_final
+        elseif isa($alg, Periodic)
+            check = 0
+            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
+            F_final = Array{Float64, 1}(undef, 2)
+            F_Check_inner = Array{Any, 2}(undef, 3, $alg.period)
+            for i = 1:$alg.acp
+                $alg.fstore(F,F_Check,t,i)
+                for j= (i-1)*$alg.period: (i)*$alg.period-1
+                    $(forloop.args[2])
+                end
+            end
+            F_final .= F
+            L .= [0, 1]
+            t = 1.0-h
+            L_H .= L
+            for i = $alg.acp:-1:1
+                t = $alg.frestore(F,F_Check,i)
+                for j= 1:$alg.period
+                    $alg.fstore(F,F_Check_inner,t,j)
+                    $(forloop.args[2])
+                end
+                for j= $alg.period:-1:1
+                    t = $alg.frestore(F,F_Check_inner,j)
+                    L_H .= L
+                    F_H .= F
+                    adjoint(F_H, L_H, F, L, t, h)
+                    t = t - h
+                end
+            end
+            F .= F_final
         end
-        F .= F_final
-        # $args
     end
     esc(ex)
 end
 
-function main(steps, snaps, info)
+function optcontrol(scheme, steps)
     header()
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
@@ -182,21 +214,7 @@ function main(steps, snaps, info)
     println("INFO = 3 -> calculate approximate solution + all information ")
     println(" ENTER:   STEPS, SNAPS, INFO \n")
 
-    function store(F_H, F_C,t, i)
-        F_C[1,i] = F_H[1]
-        F_C[2,i] = F_H[2]
-        F_C[3,i] = t
-        return
-    end
 
-    function restore(F_H, F_C, i)
-        F_H[1] = F_C[1,i]
-        F_H[2] = F_C[2,i]
-        t = F_C[3,i]
-        return t
-    end
-
-    revolve = Revolve(steps, snaps, store, restore; verbose=info)
     h = 1.0/steps
     # F_final = Array{Float64, 1}(undef, 2)
     L = Array{Float64, 1}(undef, 2)
@@ -209,7 +227,7 @@ function main(steps, snaps, info)
     # set_input(revolve, F)
     # set_output(revolve, F)
 
-    @checkpoint revolve for i in 1:steps
+    @checkpoint scheme for i in 1:steps
         F_H[:] = F[:]
         advance(F,F_H,t,h)
         t += h

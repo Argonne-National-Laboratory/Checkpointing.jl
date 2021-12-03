@@ -1,7 +1,6 @@
 module Checkpointing
 
 using LinearAlgebra
-using Parameters
 
 export mynorm
 
@@ -27,7 +26,7 @@ abstract type Scheme end
 	done
 end
 
-@with_kw struct Action
+struct Action
 	actionflag::ActionFlag
 	iteration::Int
 	startiteration::Int
@@ -37,6 +36,6 @@ end
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 
-export Revolve, guess, factor, next_action!, ActionFlag
+export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 
 end
