@@ -14,6 +14,8 @@ using LinearAlgebra
     @test revolve.numinv == 177
 end
 
+include("jacobian.jl")
+
 include("../examples/optcontrol.jl")
 # @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
 @testset "AD Tool $adtool" for adtool in [ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
