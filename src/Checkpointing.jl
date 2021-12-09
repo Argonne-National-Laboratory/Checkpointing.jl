@@ -1,8 +1,8 @@
 module Checkpointing
 
 using LinearAlgebra
-using ReverseDiff
-using Zygote
+# All AD tools
+using ForwardDiff, Enzyme, ReverseDiff, Zygote
 
 export mynorm
 
@@ -40,6 +40,8 @@ abstract type AbstractADTool end
 struct ReverseDiffADTool <: AbstractADTool end
 struct ZygoteADTool <: AbstractADTool end
 struct DiffractorADTool <: AbstractADTool end
+struct EnzymeADTool <: AbstractADTool end
+struct ForwardDiffADTool <: AbstractADTool end
 
 function jacobian(tobedifferentiated, F_H, ::ReverseDiffADTool)
     return ReverseDiff.jacobian(tobedifferentiated, F_H)
@@ -49,14 +51,36 @@ function jacobian(tobedifferentiated, F_H, ::ZygoteADTool)
     return Zygote.jacobian(tobedifferentiated, F_H)[1]
 end
 
-function jacobian(tobedifferentiated, F_H, ::DiffractorADTool)
-    return Zygote.jacobian(tobedifferentiated, F_H)[1]
+function jacobian(tobedifferentiated, F_H, ::ForwardDiffADTool)
+    return ForwardDiff.jacobian(tobedifferentiated, F_H)
+end
+
+function jacobian(tobedifferentiated, F_H, ::EnzymeADTool)
+    function f(x,res)
+        y = tobedifferentiated(x)
+        copyto!(res,y)
+        return nothing
+    end
+    J = zeros(eltype(F_H), length(F_H), length(F_H))
+    x = zeros(eltype(F_H), length(F_H))
+    dx = zeros(eltype(F_H), length(F_H))
+    y = zeros(eltype(F_H), length(F_H))
+    dy = zeros(eltype(F_H), length(F_H))
+    for i in 1:length(F_H)
+        copyto!(x, F_H)
+        fill!(dx, 0)
+        fill!(y, 0)
+        dy[i] = 1.0
+        autodiff(f, Duplicated(x,dx), Duplicated(y, dy))
+        J[i,:] = dx[:]
+    end
+    return J
 end
 
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
-export ReverseDiffADTool, ZygoteADTool, jacobian
+export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, jacobian
 
 end
