@@ -28,11 +28,10 @@ include("../examples/optcontrol.jl")
         return
     end
 
-    function restore(F_H, F_C, i)
-        F_H[1] = F_C[1,i]
-        F_H[2] = F_C[2,i]
+    function restore(F_C, i)
+        F_H = [F_C[1,i], F_C[2,i]]
         t = F_C[3,i]
-        return t
+        return F_H, t
     end
     revolve = Revolve(steps, snaps, store, restore; verbose=info)
     F_opt, F_final, L_opt, L = optcontrol(revolve, steps)
@@ -53,15 +52,13 @@ end
          return
      end
 
-     function restore(F_H, F_C, i)
-         F_H[1] = F_C[1,i]
-         F_H[2] = F_C[2,i]
+     function restore(F_C, i)
+         F_H = [F_C[1,i], F_C[2,i]]
          t = F_C[3,i]
-         return t
+         return F_H, t
      end
      periodic = Periodic(steps, snaps, store, restore; verbose=info)
      F_opt, F_final, L_opt, L = optcontrol(periodic, steps)
      @test isapprox(F_opt, F_final, rtol=1e-4)
      @test isapprox(L_opt, L, rtol=1e-4)
  end
- 

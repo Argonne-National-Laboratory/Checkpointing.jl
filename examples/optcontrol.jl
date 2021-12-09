@@ -13,16 +13,12 @@ function func_U(t)
 end
 
 function func(X,t)
-    F = similar(X)
-    F[1] = 0.5*X[1]+ func_U(t)
-    F[2] = X[1]*X[1]+0.5*(func_U(t)*func_U(t))
+    F = [0.5*X[1]+ func_U(t), X[1]*X[1]+0.5*(func_U(t)*func_U(t))]
     return F
 end
 
 function func_adj(BF, X)
-    BX = similar(X)
-    BX[1] = 0.5*BF[1]+2.0*X[1]*BF[2]
-    BX[2] = 0.0
+    BX = [0.5*BF[1]+2.0*X[1]*BF[2], 0.0]
     return BX
 end
 
@@ -40,38 +36,29 @@ function opt_lambda(L,t)
     return
 end
 
-function advance(F,F_H,t,h)
+function advance(F_H,t,h)
     k0 = func(F_H,t)
-    G = similar(F_H)
-    G[1] = F_H[1] + h/2.0*k0[1]
-    G[2] = F_H[2] + h/2.0*k0[2]
+    G = [F_H[1] + h/2.0*k0[1], F_H[2] + h/2.0*k0[2]]
     k1 = func(G,t+h/2.0)
-    F[1] = F_H[1] + h*k1[1]
-    F[2] = F_H[2] + h*k1[2]
-    return
+    F = [F_H[1] + h*k1[1], F_H[2] + h*k1[2]]
+    return F
 end
 
 function adjoint(F_H,L_H,F,L,t,h)
     k0 = func(F_H,t)
     G = similar(F_H)
     Bk1 = similar(L_H)
-    G[1] = F_H[1] + h/2.0*k0[1]
-    G[2] = F_H[2] + h/2.0*k0[2]
+    G = [F_H[1] + h/2.0*k0[1], F_H[2] + h/2.0*k0[2]]
     k1 = func(G,t+h/2.0)
-    L[1] = L_H[1]
-    L[2] = L_H[2]
-    Bk1[1] = h*L_H[1]
-    Bk1[2] = h*L_H[2]
+    L = [L_H[1], L_H[2]]
+    Bk1 = [h*L_H[1], h*L_H[2]]
     BG = func_adj(Bk1,G)
     Bk0 = similar(BG)
-    L[1] += BG[1]
-    L[2] += BG[2]
-    Bk0[1] = h/2.0*BG[1]
-    Bk0[2] = h/2.0*BG[2]
+    L = [L[1] + BG[1], L[2] + BG[2]]
+    Bk0 = [h/2.0*BG[1], h/2.0*BG[2]]
     BH = func_adj(Bk0,F_H)
-    L[1] += BH[1]
-    L[2] += BH[2]
-    return
+    L = [L[1] + BH[1], L[2] + BH[2]]
+    return L
 end
 
 
@@ -108,6 +95,20 @@ end
 
 macro checkpoint(alg, forloop)
     ex = quote
+        function tobedifferentiated_reversediff(inputs)
+            local F_H = similar(inputs)
+            local F = copy(inputs)
+            $(forloop.args[2])
+            outputs = F
+            return outputs
+        end
+        function tobedifferentiated_enzyme(F, F_H)
+            # F = similar(inputs)
+            # F_H = similar(inputs)
+            # F = copy(inputs)
+            $(forloop.args[2])
+            return nothing
+        end
         if isa($alg, Revolve)
             storemap = Dict{Int32,Int32}()
             check = 0
@@ -131,36 +132,21 @@ macro checkpoint(alg, forloop)
                     L_H .= L
                     lF = length(F)
                     lF_H = length(F_H)
-                    function tobedifferentiated_enzyme(F, F_H)
-                        # F = similar(inputs)
-                        # F_H = similar(inputs)
-                        # F = copy(inputs)
-                        $(forloop.args[2])
-                        return nothing
-                    end
-                    function tobedifferentiated_reversediff(inputs)
-                        F = similar(inputs)
-                        F_H = similar(inputs)
-                        F = copy(inputs)
-                        $(forloop.args[2])
-                        outputs = F
-                        return outputs
-                    end
                     # autodiff(tobedifferentiated_enzyme, Duplicated(F, L), Duplicated(F_H, L_H))
-                    # ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
-
-                    adjoint(F_H ,L_H, F, L, t, h)
+                    # L = adjoint(F_H ,L_H, F, L, t, h)
+                    L = ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)[2,:]
                 elseif (next_action.actionflag == Checkpointing.uturn)
                     L_H .= L
-                    F_H = copy(F)
-                    adjoint(F_H, L_H, F, L, t, h)
+                    F_H = F
+                    res = ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
+                    L =  transpose(res)*L
                     t = t - h
                     if haskey(storemap,next_action.iteration-1-1)
                         delete!(storemap,next_action.iteration-1-1)
                         check=check-1
                     end
                 elseif (next_action.actionflag == Checkpointing.restore)
-                    t = $alg.frestore(F,F_Check,storemap[next_action.iteration-1])
+                    F, t = $alg.frestore(F_Check,storemap[next_action.iteration-1])
                 elseif next_action.actionflag == Checkpointing.done
                     if haskey(storemap,next_action.iteration-1-1)
                         delete!(storemap,next_action.iteration-1-1)
@@ -186,16 +172,17 @@ macro checkpoint(alg, forloop)
             t = 1.0-h
             L_H .= L
             for i = $alg.acp:-1:1
-                t = $alg.frestore(F,F_Check,i)
+                F,t = $alg.frestore(F_Check,i)
                 for j= 1:$alg.period
                     $alg.fstore(F,F_Check_inner,t,j)
                     $(forloop.args[2])
                 end
                 for j= $alg.period:-1:1
-                    t = $alg.frestore(F,F_Check_inner,j)
+                    F,t = $alg.frestore(F_Check_inner,j)
                     L_H .= L
                     F_H .= F
-                    adjoint(F_H, L_H, F, L, t, h)
+                    res = ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
+                    L =  transpose(res)*L
                     t = t - h
                 end
             end
@@ -229,7 +216,7 @@ function optcontrol(scheme, steps)
 
     @checkpoint scheme for i in 1:steps
         F_H[:] = F[:]
-        advance(F,F_H,t,h)
+        F = advance(F_H,t,h)
         t += h
     end
 
