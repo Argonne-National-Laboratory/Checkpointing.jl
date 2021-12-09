@@ -2,7 +2,7 @@ module Checkpointing
 
 using LinearAlgebra
 # All AD tools
-using ForwardDiff, Enzyme, ReverseDiff, Zygote
+using Diffractor, ForwardDiff, Enzyme, ReverseDiff, Zygote
 
 export mynorm
 
@@ -77,10 +77,19 @@ function jacobian(tobedifferentiated, F_H, ::EnzymeADTool)
     return J
 end
 
+function jacobian(tobedifferentiated, F_H, ::DiffractorADTool)
+    J = zeros(eltype(F_H), length(F_H), length(F_H))
+    for i in 1:length(F_H)
+        grad = Diffractor.gradient(x -> tobedifferentiated(x)[i], F_H)
+        J[i,:] = grad[:][1]
+    end
+    return J
+end
+
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
-export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, jacobian
+export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
 
 end

@@ -98,7 +98,7 @@ macro checkpoint(alg, adtool, forloop)
     ex = quote
         function tobedifferentiated(inputs)
             local F_H = similar(inputs)
-            local F = copy(inputs)
+            local F = inputs
             $(forloop.args[2])
             outputs = F
             return outputs
