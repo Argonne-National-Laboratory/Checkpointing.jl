@@ -1,6 +1,8 @@
 module Checkpointing
 
 using LinearAlgebra
+using ReverseDiff
+using Zygote
 
 export mynorm
 
@@ -33,9 +35,28 @@ struct Action
 	cpnum::Int
 end
 
+abstract type AbstractADTool end
+
+struct ReverseDiffADTool <: AbstractADTool end
+struct ZygoteADTool <: AbstractADTool end
+struct DiffractorADTool <: AbstractADTool end
+
+function jacobian(tobedifferentiated, F_H, ::ReverseDiffADTool)
+    return ReverseDiff.jacobian(tobedifferentiated, F_H)
+end
+
+function jacobian(tobedifferentiated, F_H, ::ZygoteADTool)
+    return Zygote.jacobian(tobedifferentiated, F_H)[1]
+end
+
+function jacobian(tobedifferentiated, F_H, ::DiffractorADTool)
+    return Zygote.jacobian(tobedifferentiated, F_H)[1]
+end
+
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
+export ReverseDiffADTool, ZygoteADTool, jacobian
 
 end

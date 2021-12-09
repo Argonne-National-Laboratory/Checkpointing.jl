@@ -6,6 +6,7 @@
 using Checkpointing
 using Enzyme
 using ReverseDiff
+using Zygote
 
 function func_U(t)
     e = exp(1)
@@ -93,21 +94,14 @@ function header()
         return
 end
 
-macro checkpoint(alg, forloop)
+macro checkpoint(alg, adtool, forloop)
     ex = quote
-        function tobedifferentiated_reversediff(inputs)
+        function tobedifferentiated(inputs)
             local F_H = similar(inputs)
             local F = copy(inputs)
             $(forloop.args[2])
             outputs = F
             return outputs
-        end
-        function tobedifferentiated_enzyme(F, F_H)
-            # F = similar(inputs)
-            # F_H = similar(inputs)
-            # F = copy(inputs)
-            $(forloop.args[2])
-            return nothing
         end
         if isa($alg, Revolve)
             storemap = Dict{Int32,Int32}()
@@ -132,13 +126,11 @@ macro checkpoint(alg, forloop)
                     L_H .= L
                     lF = length(F)
                     lF_H = length(F_H)
-                    # autodiff(tobedifferentiated_enzyme, Duplicated(F, L), Duplicated(F_H, L_H))
-                    # L = adjoint(F_H ,L_H, F, L, t, h)
-                    L = ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)[2,:]
+                    L = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)[2,:]
                 elseif (next_action.actionflag == Checkpointing.uturn)
                     L_H .= L
                     F_H = F
-                    res = ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
+                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
                     L =  transpose(res)*L
                     t = t - h
                     if haskey(storemap,next_action.iteration-1-1)
@@ -181,7 +173,7 @@ macro checkpoint(alg, forloop)
                     F,t = $alg.frestore(F_Check_inner,j)
                     L_H .= L
                     F_H .= F
-                    res = ReverseDiff.jacobian(tobedifferentiated_reversediff, F_H)
+                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
                     L =  transpose(res)*L
                     t = t - h
                 end
@@ -192,7 +184,7 @@ macro checkpoint(alg, forloop)
     esc(ex)
 end
 
-function optcontrol(scheme, steps)
+function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
     header()
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
@@ -203,7 +195,6 @@ function optcontrol(scheme, steps)
 
 
     h = 1.0/steps
-    # F_final = Array{Float64, 1}(undef, 2)
     L = Array{Float64, 1}(undef, 2)
     L_H = Array{Float64, 1}(undef, 2)
 
@@ -211,42 +202,11 @@ function optcontrol(scheme, steps)
     F = [1.0, 0.0]
     F_H = [0.0, 0.0]
 
-    # set_input(revolve, F)
-    # set_output(revolve, F)
-
-    @checkpoint scheme for i in 1:steps
-        F_H[:] = F[:]
+    @checkpoint scheme adtool for i in 1:steps
+        F_H = [F[1], F[2]]
         F = advance(F_H,t,h)
         t += h
     end
-
-
-    # Enzyme crashes while differentiating this fully inlined function implementation
-    # function tobedifferentiated(F, F_H)
-    #     e = exp(1)
-    #     for i in 1:steps
-    #         F_H[1] = F[1]
-    #         F_H[2] = F[2]
-    #         # k0 = func(F_H,t)
-    #             func_U = 2.0*((e^(3.0*t))-(e^3))/((e^(3.0*t/2.0))*(2.0+(e^3)))
-    #             k0 = copy(F_H)
-    #             k0[1] = 0.5*F_H[1]+ func_U
-    #             k0[2] = F_H[1]*F_H[1]+0.5*(func_U*func_U)
-    #         G = copy(F_H)
-    #         G[1] = F_H[1] + h/2.0*k0[1]
-    #         G[2] = F_H[2] + h/2.0*k0[2]
-    #         # k1 = func(G,t+h/2.0)
-    #             t_ = t+h/2.0
-    #             func_U = 2.0*((e^(3.0*t_))-(e^3))/((e^(3.0*t_/2.0))*(2.0+(e^3)))
-    #             k1 = copy(G)
-    #             k1[1] = 0.5*G[1]+ func_U
-    #             k1[2] = G[1]*G[1]+0.5*(func_U*func_U)
-    #         F[1] = F_H[1] + h*k1[1]
-    #         F[2] = F_H[2] + h*k1[2]
-    #         t += h
-    #     end
-    # end
-    # autodiff(tobedifferentiated, Duplicated(F, L), Duplicated(F_H, L_H))
 
     F_opt = Array{Float64, 1}(undef, 2)
     L_opt = Array{Float64, 1}(undef, 2)
