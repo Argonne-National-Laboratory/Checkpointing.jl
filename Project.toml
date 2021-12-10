@@ -5,7 +5,6 @@ version = "0.1.0"
 [deps]
 Diffractor = "9f5e2b26-1114-432f-b630-d3fe2085c51c"
 Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
-Enzyme_jll = "7cc45869-7501-5eee-bdea-0790c847d4ef"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
