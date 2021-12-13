@@ -38,7 +38,9 @@ function tobedifferentiated_reversediff(x)
 end
 
 function tobedifferentiated_enzyme(x,y)
-    y = advance(x, t, h)
+    res = advance(x, t, h)
+    y[1] = res[1]
+    y[2] = res[2]
     return nothing
 end
 
