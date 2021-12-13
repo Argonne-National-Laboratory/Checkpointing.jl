@@ -39,8 +39,8 @@ end
 
 function tobedifferentiated_enzyme(x,y)
     res = advance(x, t, h)
-    y[1] = res[1]
-    y[2] = res[2]
+    # y[:] = res[:]
+    copyto!(y, res)
     return nothing
 end
 
