@@ -17,7 +17,8 @@ end
 include("jacobian.jl")
 
 include("../examples/optcontrol.jl")
-@testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
+# @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
+@testset "AD Tool $adtool" for adtool in [ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
     @testset "Testing Revolve..." begin
         global steps = 100
         global snaps = 3

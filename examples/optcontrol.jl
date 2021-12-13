@@ -8,60 +8,7 @@ using Enzyme
 using ReverseDiff
 using Zygote
 
-function func_U(t)
-    e = exp(1)
-    return 2.0*((e^(3.0*t))-(e^3))/((e^(3.0*t/2.0))*(2.0+(e^3)))
-end
-
-function func(X,t)
-    F = [0.5*X[1]+ func_U(t), X[1]*X[1]+0.5*(func_U(t)*func_U(t))]
-    return F
-end
-
-function func_adj(BF, X)
-    BX = [0.5*BF[1]+2.0*X[1]*BF[2], 0.0]
-    return BX
-end
-
-function opt_sol(Y,t)
-    e = exp(1)
-    Y[1] = (2.0*e^(3.0*t)+e^3)/(e^(3.0*t/2.0)*(2.0+e^3))
-    Y[2] = (2.0*e^(3.0*t)-e^(6.0-3.0*t)-2.0+e^6)/((2.0+e^3)^2)
-    return
-end
-
-function opt_lambda(L,t)
-    e = exp(1)
-    L[1] = (2.0*e^(3-t)-2.0*e^(2.0*t))/(e^(t/2.0)*(2+e^3))
-    L[2] = 1.0
-    return
-end
-
-function advance(F_H,t,h)
-    k0 = func(F_H,t)
-    G = [F_H[1] + h/2.0*k0[1], F_H[2] + h/2.0*k0[2]]
-    k1 = func(G,t+h/2.0)
-    F = [F_H[1] + h*k1[1], F_H[2] + h*k1[2]]
-    return F
-end
-
-function adjoint(F_H,L_H,F,L,t,h)
-    k0 = func(F_H,t)
-    G = similar(F_H)
-    Bk1 = similar(L_H)
-    G = [F_H[1] + h/2.0*k0[1], F_H[2] + h/2.0*k0[2]]
-    k1 = func(G,t+h/2.0)
-    L = [L_H[1], L_H[2]]
-    Bk1 = [h*L_H[1], h*L_H[2]]
-    BG = func_adj(Bk1,G)
-    Bk0 = similar(BG)
-    L = [L[1] + BG[1], L[2] + BG[2]]
-    Bk0 = [h/2.0*BG[1], h/2.0*BG[2]]
-    BH = func_adj(Bk0,F_H)
-    L = [L[1] + BH[1], L[2] + BH[2]]
-    return L
-end
-
+include("optcontrolfunc.jl")
 
 function header()
         println("**************************************************************************")
@@ -94,98 +41,8 @@ function header()
         return
 end
 
-macro checkpoint(alg, adtool, forloop)
-    ex = quote
-        function tobedifferentiated(inputs)
-            local F_H = similar(inputs)
-            local F = inputs
-            $(forloop.args[2])
-            outputs = F
-            return outputs
-        end
-        if isa($alg, Revolve)
-            storemap = Dict{Int32,Int32}()
-            check = 0
-            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-            F_final = Array{Float64, 1}(undef, 2)
-            while true
-                next_action = next_action!($alg)
-                if (next_action.actionflag == Checkpointing.store)
-                    check = check+1
-                    storemap[next_action.iteration-1]=check
-                    $alg.fstore(F,F_Check,t,check)
-                elseif (next_action.actionflag == Checkpointing.forward)
-                    for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(forloop.args[2])
-                    end
-                elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(forloop.args[2])
-                    F_final .= F
-                    L .= [0, 1]
-                    t = 1.0-h
-                    L_H .= L
-                    lF = length(F)
-                    lF_H = length(F_H)
-                    L = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)[2,:]
-                elseif (next_action.actionflag == Checkpointing.uturn)
-                    L_H .= L
-                    F_H = F
-                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
-                    L =  transpose(res)*L
-                    t = t - h
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                        check=check-1
-                    end
-                elseif (next_action.actionflag == Checkpointing.restore)
-                    F, t = $alg.frestore(F_Check,storemap[next_action.iteration-1])
-                elseif next_action.actionflag == Checkpointing.done
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                        check=check-1
-                    end
-                    break
-                end
-            end
-            F .= F_final
-        elseif isa($alg, Periodic)
-            check = 0
-            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-            F_final = Array{Float64, 1}(undef, 2)
-            F_Check_inner = Array{Any, 2}(undef, 3, $alg.period)
-            for i = 1:$alg.acp
-                $alg.fstore(F,F_Check,t,i)
-                for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(forloop.args[2])
-                end
-            end
-            F_final .= F
-            L .= [0, 1]
-            t = 1.0-h
-            L_H .= L
-            for i = $alg.acp:-1:1
-                F,t = $alg.frestore(F_Check,i)
-                for j= 1:$alg.period
-                    $alg.fstore(F,F_Check_inner,t,j)
-                    $(forloop.args[2])
-                end
-                for j= $alg.period:-1:1
-                    F,t = $alg.frestore(F_Check_inner,j)
-                    L_H .= L
-                    F_H .= F
-                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
-                    L =  transpose(res)*L
-                    t = t - h
-                end
-            end
-            F .= F_final
-        end
-    end
-    esc(ex)
-end
 
 function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
-    header()
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
     println("INFO = 1 -> calculate only approximate solution")
