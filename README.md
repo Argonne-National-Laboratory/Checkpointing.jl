@@ -2,10 +2,10 @@
 
 ![CI](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/workflows/Run%20tests/badge.svg?branch=main)
 
-This package is an ADTool agnostic implementation of adjoint checkpointing in automatic differentiation (AD). It allows to implement adjoint checkpointing schemes that can be easily interfaced with any Julia AD tool. Currently it supports the following checkpointing schemes:
+This package provides checkpointing schemes for adjoint computation using automatic differentiation (AD) of time stepping loops. The schemes are agnostic to the ADTool being used and can be easily interfaced with any Julia AD tool. Currently the package provides the following checkpointing schemes:
 
-1. Revolve [1] 
-2. Periodic
+1. Revolve/Binomial checkpointing [1]
+2. Periodic checkpointing
 
 ## Installation
 
@@ -60,11 +60,12 @@ where `store` and `restore` are functions for storing and restoring `i`-th check
 
 ## Future
 
-The following features are currently investigated and will be implemented on a per need basis:
+The following features are planned for development:
 
-* Integration with (`ChainRules.jl`)[https://github.com/JuliaDiff/ChainRules.jl] to generate rules for timestepping loops,
-* Composition of checkpointing schemes,
-* more advanced multi-level checkpointing schemes.
+* Integration with (`ChainRules.jl`)[https://github.com/JuliaDiff/ChainRules.jl] to generate rules for timestepping loops
+* Online checkpointing schemes for adaptime timestepping
+* Composition of checkpointing schemes
+* Multi-level checkpointing schemes
 
 [1] Andreas Griewank and Andrea Walther. 2000. Algorithm 799: revolve: an implementation of checkpointing for the reverse or adjoint mode of computational differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI:https://doi.org/10.1145/347837.347846
 
