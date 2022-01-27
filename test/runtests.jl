@@ -1,6 +1,10 @@
 using Test
 using Checkpointing
 using LinearAlgebra
+# All tested AD tools
+using ForwardDiff, Enzyme, ReverseDiff, Zygote
+# Include all the AD tool interfaces through `jacobian()`
+include("../examples/adtools.jl")
 
 @testset "Testing Checkpointing.jl" begin
     @testset "Testing Revolve..." begin

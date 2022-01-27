@@ -1,5 +1,4 @@
 using Checkpointing
-using Diffractor
 using ReverseDiff
 using Zygote
 using ForwardDiff
@@ -15,6 +14,6 @@ J_Re = Checkpointing.jacobian(f, x, ReverseDiffADTool())
 J_Zy = Checkpointing.jacobian(f, x, ZygoteADTool())
 J_Fo = Checkpointing.jacobian(f, x, ForwardDiffADTool())
 J_En = Checkpointing.jacobian(f, x, EnzymeADTool())
-J_Di = Checkpointing.jacobian(f, x, DiffractorADTool())
+# J_Di = Checkpointing.jacobian(f, x, DiffractorADTool())
 
 @test J_Re ≈ J_Zy ≈ J_Fo ≈ J_En

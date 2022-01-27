@@ -4,9 +4,7 @@
 # Technique for Resilience. United States: N. p., 2016. https://www.osti.gov/biblio/1364654.
 
 using Checkpointing
-using Enzyme
 using ReverseDiff
-using Zygote
 
 include("optcontrolfunc.jl")
 
