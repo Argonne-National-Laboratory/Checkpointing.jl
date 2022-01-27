@@ -40,7 +40,7 @@ The macro `@checkpointing` covers the transformation of `for` loops with `1:step
 end
 ```
 
-where `adtool` is one of the interface AD tools (e.g. `ReverseDiffADTool()`) and scheme is a adjoint checkpointing scheme like for example revolve
+where `adtool` is one of the interface AD tools (e.g. `ReverseDiffADTool()`) and scheme is a adjoint checkpointing scheme like for example revolve.
 ```julia
 function store(x::Vector, c::Vector, t::Int64, s::Int64)
     c[1,s] = x[1]
@@ -56,7 +56,7 @@ function restore(c, i)
 end
 Revolve(steps, checkpoints, store, store; verbose=verbose)
 ```
-where `store` and `restore` are functions for storing and restoring `i`-th checkpoint `c[i]` with variables `x` and `t`. `steps` is the total number of timesteps while `checkpoints` is the number of available checkpoints.
+`Revolve` needs the functions `store` and `restore` for storing and restoring the `i`-th checkpoint `c[i]` with variables `x` and `t`. `steps` is the total number of timesteps while `checkpoints` is the number of available checkpoints.
 
 ## Future
 
