@@ -1,6 +1,6 @@
 using Enzyme
 
-function speelpenning(y, x)
+function speelpenning(y::AbstractVector{VT}, x::AbstractVector{VT}) where {VT}
     y[1] = reduce(*, x)
     return nothing
 end
