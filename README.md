@@ -63,7 +63,7 @@ Revolve(steps, checkpoints, store, store; verbose=verbose)
 The following features are planned for development:
 
 * Integration with (`ChainRules.jl`)[https://github.com/JuliaDiff/ChainRules.jl] to generate rules for timestepping loops
-* Online checkpointing schemes for adaptime timestepping
+* Online checkpointing schemes for adaptive timestepping
 * Composition of checkpointing schemes
 * Multi-level checkpointing schemes
 
