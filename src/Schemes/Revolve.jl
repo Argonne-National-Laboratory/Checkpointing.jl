@@ -17,11 +17,19 @@ mutable struct Revolve <: Scheme
     firstuturned::Bool
     stepof::Vector{Int}
     verbose::Int
-    fstore::Function
-    frestore::Function
+    fstore::Union{Function,Nothing}
+    frestore::Union{Function,Nothing}
 end
 
-function Revolve(steps::Int, checkpoints::Int, fstore::Function, frestore::Function; anActionInstance::Union{Nothing,Action} = nothing, bundle_::Union{Nothing,Int} = nothing, verbose::Int = 0)
+function Revolve(
+    steps::Int,
+    checkpoints::Int,
+    fstore::Union{Function,Nothing} = nothing,
+    frestore::Union{Function,Nothing} = nothing;
+    anActionInstance::Union{Nothing,Action} = nothing,
+    bundle_::Union{Nothing,Int} = nothing,
+    verbose::Int = 0
+)
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0

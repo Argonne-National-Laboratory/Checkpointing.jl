@@ -39,8 +39,7 @@ function jacobian(tobedifferentiated, F_H, ::AbstractADTool)
     error("No AD tool interface implemented")
 end
 
-export AbstractADTool, jacobian
-
+export AbstractADTool, jacobian, @checkpoint, @checkpoint_mutable
 
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
@@ -78,8 +77,6 @@ macro checkpoint(alg, adtool, forloop)
                     L .= [0, 1]
                     t = 1.0-h
                     L_H .= L
-                    lF = length(F)
-                    lF_H = length(F_H)
                     L = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)[2,:]
                 elseif (next_action.actionflag == Checkpointing.uturn)
                     L_H .= L
@@ -138,6 +135,78 @@ macro checkpoint(alg, adtool, forloop)
     esc(ex)
 end
 
-export @checkpoint
+macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
+    ex = quote
+        function tobedifferentiated($model)
+            $(forloop.args[2])
+            return nothing
+        end
+        if isa($alg, Revolve)
+            storemap = Dict{Int32,Int32}()
+            check = 0
+            MT = typeof($model)
+            model_check = Array{MT}(undef, $alg.acp)
+            model_final = deepcopy($model)
+            while true
+                next_action = next_action!($alg)
+                if (next_action.actionflag == Checkpointing.store)
+                    check = check+1
+                    storemap[next_action.iteration-1]=check
+                    model_check[check] = deepcopy($model)
+                elseif (next_action.actionflag == Checkpointing.forward)
+                    for j= next_action.startiteration:(next_action.iteration - 1)
+                        $(forloop.args[2])
+                    end
+                elseif (next_action.actionflag == Checkpointing.firstuturn)
+                    $(forloop.args[2])
+                    model_final = deepcopy($model)
+                    Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
+                elseif (next_action.actionflag == Checkpointing.uturn)
+                    Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                        check=check-1
+                    end
+                elseif (next_action.actionflag == Checkpointing.restore)
+                    $model = deepcopy(model_check[storemap[next_action.iteration-1]])
+                elseif next_action.actionflag == Checkpointing.done
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                        check=check-1
+                    end
+                    break
+                end
+            end
+            $model = deepcopy(model_final)
+        elseif isa($alg, Periodic)
+            MT = typeof($model)
+            model_check_outer = Array{MT}(undef, $alg.acp)
+            model_check_inner = Array{MT}(undef, $alg.period)
+            model_final = deepcopy($model)
+            check = 0
+            for i = 1:$alg.acp
+                model_check_outer[i] = deepcopy($model)
+                for j= (i-1)*$alg.period: (i)*$alg.period-1
+                    $(forloop.args[2])
+                end
+            end
+            model_final = deepcopy($model)
+            for i = $alg.acp:-1:1
+                $model = deepcopy(model_check_outer[i])
+                for j= 1:$alg.period
+                    model_check_inner[j] = deepcopy($model)
+
+                    $(forloop.args[2])
+                end
+                for j= $alg.period:-1:1
+                    $model = deepcopy(model_check_inner[j])
+                    Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
+                end
+            end
+            $model = deepcopy(model_final)
+        end
+    end
+    esc(ex)
+end
 
 end
