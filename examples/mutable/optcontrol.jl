@@ -51,7 +51,7 @@ function muoptcontrol(scheme, steps)
     # F   : output
     # F_H : input
     # L   : seed the output adjoint
-    # L   : set input adjoint to 0
+    # L_H : set input adjoint to 0
     F = [1.0, 0.0]
     F_H = [0.0, 0.0]
     L = [0.0, 1.0]

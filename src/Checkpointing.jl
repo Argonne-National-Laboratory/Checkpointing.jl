@@ -195,7 +195,6 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
                 $model = deepcopy(model_check_outer[i])
                 for j= 1:$alg.period
                     model_check_inner[j] = deepcopy($model)
-
                     $(forloop.args[2])
                 end
                 for j= $alg.period:-1:1

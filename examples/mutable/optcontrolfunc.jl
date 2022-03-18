@@ -6,12 +6,12 @@ mutable struct Model
     h::Float64
 end
 
-@inline function func_U(t)
+function func_U(t)
     e = exp(1)
     return 2.0*((e^(3.0*t))-(e^3))/((e^(3.0*t/2.0))*(2.0+(e^3)))
 end
 
-@inline function func(F, X,t)
+function func(F, X,t)
     F[2] = X[1]*X[1]+0.5*(func_U(t)*func_U(t))
     F[1] = 0.5*X[1]+ func_U(t)
     return nothing
