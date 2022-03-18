@@ -83,8 +83,6 @@ include("../examples/adtools.jl")
         include("../examples/mutable/optcontrol.jl")
         @testset "Testing Revolve..." begin
             # Enzyme segfaults if the garbage collector is enabled
-            GC.gc()
-            GC.enable(false)
             global steps = 100
             global snaps = 3
             global info = 0
@@ -97,8 +95,6 @@ include("../examples/adtools.jl")
 
 
         @testset "Testing Periodic..." begin
-            GC.gc()
-            GC.enable(false)
             global steps = 100
             global snaps = 4
             global info = 0
