@@ -5,12 +5,6 @@
 
 using Checkpointing
 
-mutable struct Model
-    F::Vector{Float64}
-    F_H::Vector{Float64}
-    t::Float64
-    h::Float64
-end
 
 include("optcontrolfunc.jl")
 
