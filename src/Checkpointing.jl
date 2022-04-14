@@ -47,12 +47,12 @@ include("Schemes/Periodic.jl")
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
 
-macro checkpoint(alg, adtool, forloop)
+macro checkpoint(alg, adtool, loop)
     ex = quote
         function tobedifferentiated(inputs)
             local F_H = similar(inputs)
             local F = inputs
-            $(forloop.args[2])
+            $(loop.args[2])
             outputs = F
             return outputs
         end
@@ -69,10 +69,10 @@ macro checkpoint(alg, adtool, forloop)
                     $alg.fstore(F,F_Check,t,check)
                 elseif (next_action.actionflag == Checkpointing.forward)
                     for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(forloop.args[2])
+                        $(loop.args[2])
                     end
                 elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(forloop.args[2])
+                    $(loop.args[2])
                     F_final .= F
                     L .= [0, 1]
                     t = 1.0-h
@@ -107,7 +107,7 @@ macro checkpoint(alg, adtool, forloop)
             for i = 1:$alg.acp
                 $alg.fstore(F,F_Check,t,i)
                 for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(forloop.args[2])
+                    $(loop.args[2])
                 end
             end
             F_final .= F
@@ -118,7 +118,7 @@ macro checkpoint(alg, adtool, forloop)
                 F,t = $alg.frestore(F_Check,i)
                 for j= 1:$alg.period
                     $alg.fstore(F,F_Check_inner,t,j)
-                    $(forloop.args[2])
+                    $(loop.args[2])
                 end
                 for j= $alg.period:-1:1
                     F,t = $alg.frestore(F_Check_inner,j)
@@ -135,10 +135,10 @@ macro checkpoint(alg, adtool, forloop)
     esc(ex)
 end
 
-macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
+macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
     ex = quote
         function tobedifferentiated($model)
-            $(forloop.args[2])
+            $(loop.args[2])
             return nothing
         end
         if isa($alg, Revolve)
@@ -155,10 +155,10 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
                     model_check[check] = deepcopy($model)
                 elseif (next_action.actionflag == Checkpointing.forward)
                     for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(forloop.args[2])
+                        $(loop.args[2])
                     end
                 elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(forloop.args[2])
+                    $(loop.args[2])
                     model_final = deepcopy($model)
                     Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
                 elseif (next_action.actionflag == Checkpointing.uturn)
@@ -187,7 +187,7 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
             for i = 1:$alg.acp
                 model_check_outer[i] = deepcopy($model)
                 for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(forloop.args[2])
+                    $(loop.args[2])
                 end
             end
             model_final = deepcopy($model)
@@ -195,7 +195,7 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
                 $model = deepcopy(model_check_outer[i])
                 for j= 1:$alg.period
                     model_check_inner[j] = deepcopy($model)
-                    $(forloop.args[2])
+                    $(loop.args[2])
                 end
                 for j= $alg.period:-1:1
                     $model = deepcopy(model_check_inner[j])
