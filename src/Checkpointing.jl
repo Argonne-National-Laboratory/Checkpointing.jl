@@ -131,30 +131,30 @@ macro checkpoint(alg, adtool, loop)
                 end
             end
             F .= F_final
-        elseif isa($alg, Online_r2)
-            next_action = next_action!($alg)
-            if (next_action.actionflag == Checkpointing.store)
-                check = check+1
-                storemap[next_action.iteration-1]=check
-                $alg.fstore(F,F_Check,t,check)
-            elseif (next_action.actionflag == Checkpointing.forward)
-                for j= next_action.startiteration:(next_action.iteration - 1)
-                    $(loop.args[2])
-                end
-            elseif (next_action.actionflag == Checkpointing.firstuturn)
-                error("Unexpected")
-            elseif (next_action.actionflag == Checkpointing.uturn)
-                error("Unexpected")
-            elseif (next_action.actionflag == Checkpointing.restore)
-                error("Unexpected")
-            elseif next_action.actionflag == Checkpointing.done
-                info("Done online phase")
-                offline_revolve=$alg.offline_revolve
+        # elseif isa($alg, Online_r2)
+        #     next_action = next_action!($alg)
+        #     if (next_action.actionflag == Checkpointing.store)
+        #         check = check+1
+        #         storemap[next_action.iteration-1]=check
+        #         $alg.fstore(F,F_Check,t,check)
+        #     elseif (next_action.actionflag == Checkpointing.forward)
+        #         for j= next_action.startiteration:(next_action.iteration - 1)
+        #             $(loop.args[2])
+        #         end
+        #     elseif (next_action.actionflag == Checkpointing.firstuturn)
+        #         error("Unexpected")
+        #     elseif (next_action.actionflag == Checkpointing.uturn)
+        #         error("Unexpected")
+        #     elseif (next_action.actionflag == Checkpointing.restore)
+        #         error("Unexpected")
+        #     elseif next_action.actionflag == Checkpointing.done
+        #         info("Done online phase")
+        #         offline_revolve=$alg.offline_revolve
 
-                break
-            end
-        end
-        F .= F_final
+        #         break
+        #     end
+        # end
+        # F .= F_final
         end
     end
     esc(ex)
@@ -258,8 +258,8 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
                 end
             end
             $model = deepcopy(model_final)
-        end
         =#
+        end
     esc(ex)
 end
 
