@@ -353,3 +353,43 @@ function forwardcount(revolve::Revolve)
     end
     return ret
 end
+
+function checkpoint_mutable(body::Function, alg::Revolve, model_input::MT, shadowmodel::MT) where {MT}
+    model = deepcopy(model_input)
+    storemap = Dict{Int32,Int32}()
+    check = 0
+    model_check = Array{MT}(undef, alg.acp)
+    model_final = []
+    while true
+        next_action = next_action!(alg)
+        if (next_action.actionflag == Checkpointing.store)
+            check = check+1
+            storemap[next_action.iteration-1]=check
+            model_check[check] = deepcopy(model)
+        elseif (next_action.actionflag == Checkpointing.forward)
+            for j= next_action.startiteration:(next_action.iteration - 1)
+                body(model)
+            end
+        elseif (next_action.actionflag == Checkpointing.firstuturn)
+            body(model)
+            model_final =  deepcopy(model)
+            copyto!(model_input, deepcopy(model))
+            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+        elseif (next_action.actionflag == Checkpointing.uturn)
+            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            if haskey(storemap,next_action.iteration-1-1)
+                delete!(storemap,next_action.iteration-1-1)
+                check=check-1
+            end
+        elseif (next_action.actionflag == Checkpointing.restore)
+            model = deepcopy(model_check[storemap[next_action.iteration-1]])
+        elseif next_action.actionflag == Checkpointing.done
+            if haskey(storemap,next_action.iteration-1-1)
+                delete!(storemap,next_action.iteration-1-1)
+                check=check-1
+            end
+            break
+        end
+    end
+    return model_final
+end

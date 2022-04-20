@@ -45,3 +45,30 @@ function forwardcount(periodic::Periodic)
         error("Periodic forwardcount: error: steps ", periodic.steps, "not divisible by checkpoints", periodic.acp)
     end
 end
+
+function checkpoint_mutable(body::Function, alg::Periodic, model_input::MT, shadowmodel::MT) where{MT}
+    model = deepcopy(model_input)
+    model_final = []
+    model_check_outer = Array{MT}(undef, alg.acp)
+    model_check_inner = Array{MT}(undef, alg.period)
+    check = 0
+    for i = 1:alg.acp
+        model_check_outer[i] = deepcopy(model)
+        for j= (i-1)*alg.period: (i)*alg.period-1
+            body(model)
+        end
+    end
+    copyto!(model_input, deepcopy(model))
+    for i = alg.acp:-1:1
+        model = deepcopy(model_check_outer[i])
+        for j= 1:alg.period
+            model_check_inner[j] = deepcopy(model)
+            body(model)
+        end
+        for j= alg.period:-1:1
+            model = deepcopy(model_check_inner[j])
+            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+        end
+    end
+    return model_final
+end

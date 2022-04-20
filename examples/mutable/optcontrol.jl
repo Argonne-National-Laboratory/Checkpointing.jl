@@ -62,7 +62,7 @@ function muoptcontrol(scheme, steps)
     # t and h are not active so, set their adjoints to zero.
     shadowmodel = Model(L, L_H, 0.0, 0.0)
 
-    @checkpoint_mutable scheme adtool model shadowmodel for i in 1:steps
+    @checkpoint_mutable scheme model shadowmodel for i in 1:steps
         model.F_H .= model.F
         advance(model)
         model.t += h 
