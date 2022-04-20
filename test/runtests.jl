@@ -2,7 +2,7 @@ using Test
 using Checkpointing
 using LinearAlgebra
 # All tested AD tools
-using ForwardDiff, Enzyme, ReverseDiff, Zygote
+using Enzyme
 # Include all the AD tool interfaces through `jacobian()`
 include("../examples/adtools.jl")
 
@@ -82,7 +82,6 @@ include("../examples/adtools.jl")
     @testset "Test mutable optcontrol" begin
         include("../examples/mutable/optcontrol.jl")
         @testset "Testing Revolve..." begin
-            # Enzyme segfaults if the garbage collector is enabled
             global steps = 100
             global snaps = 3
             global info = 0

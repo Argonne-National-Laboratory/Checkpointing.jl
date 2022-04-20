@@ -326,3 +326,32 @@ function Revolve(
     end
     return revolve
 end
+
+function checkpoint_mutable(body::Function, alg::Online_r2, model_input::MT, shadowmodel::MT) where {MT}
+    model = deepcopy(model_input)
+    storemap = Dict{Int32,Int32}()
+    check = 0
+    model_check = Array{MT}(undef, alg.acp)
+    copyto!(model_input, deepcopy(model))
+    while true
+        next_action = next_action!(alg)
+        if (next_action.actionflag == Checkpointing.store)
+            check = check+1
+            storemap[next_action.iteration-1]=check
+            model_check[check] = deepcopy(model)
+        elseif (next_action.actionflag == Checkpointing.forward)
+            for j= next_action.startiteration:(next_action.iteration - 1)
+                body(model)
+            end
+        elseif (next_action.actionflag == Checkpointing.firstuturn)
+            error("Unexpected firstuturn")
+        elseif (next_action.actionflag == Checkpointing.uturn)
+            error("Unexpected uturn")
+        elseif (next_action.actionflag == Checkpointing.restore)
+            error("Unexpected restore")
+        elseif next_action.actionflag == Checkpointing.done
+            info("Done with online phase")
+            break
+        end
+    end
+end
