@@ -32,6 +32,11 @@ include("../examples/adtools.jl")
         include("../examples/deprecated/optcontrol.jl")
         @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
             @testset "Testing Revolve..." begin
+                # Enzyme segfaults if the garbage collector is enabled in this immutable code
+                if isa(adtool, EnzymeADTool)
+                    GC.gc()
+                    GC.enable(false)
+                end
                 global steps = 100
                 global snaps = 3
                 global info = 0
