@@ -4,7 +4,8 @@
 # Technique for Resilience. United States: N. p., 2016. https://www.osti.gov/biblio/1364654.
 
 using Checkpointing
-using ReverseDiff
+using Zygote
+
 
 include("optcontrolfunc.jl")
 
@@ -39,8 +40,7 @@ function header()
         return
 end
 
-
-function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
+function muoptcontrol(scheme, steps)
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
     println("INFO = 1 -> calculate only approximate solution")
@@ -49,19 +49,32 @@ function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
     println(" ENTER:   STEPS, SNAPS, INFO \n")
 
 
-    h = 1.0/steps
-    L = Array{Float64, 1}(undef, 2)
-    L_H = Array{Float64, 1}(undef, 2)
-
-    t = 0.0
+    # F   : output
+    # F_H : input
+    # L   : seed the output adjoint
+    # L_H : set input adjoint to 0
     F = [1.0, 0.0]
     F_H = [0.0, 0.0]
+    L = [0.0, 1.0]
+    L_H = [0.0, 0.0]
+    t = 0.0
+    h = 1.0/steps
+    model = Model(F, F_H, t, h)
+    # t and h are not active so, set their adjoints to zero.
+    shadowmodel = Model(L, L_H, 0.0, 0.0)
 
-    @checkpoint scheme adtool for i in 1:steps
-        F_H = [F[1], F[2]]
-        F = advance(F_H,t,h)
-        t += h
+    function foo(model::Model)
+        @checkpoint_struct scheme model shadowmodel for i in 1:steps
+            model.F_H .= model.F
+            advance(model)
+            model.t += h
+        end
+        return model.F[1]
     end
+    g = Zygote.gradient(foo,model)
+
+    F = model.F
+    L = [g[1].F[1], g[1].F[2]]
 
     F_opt = Array{Float64, 1}(undef, 2)
     L_opt = Array{Float64, 1}(undef, 2)
@@ -72,7 +85,7 @@ function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
     println("y_1 (1)  = " , F[1] , "  y_2 (1)  = " , F[2] , " \n\n")
     println("l_1*(0)  = " , L_opt[1] , "  l_2*(0)  = " , L_opt[2])
     println("l_1 (0)  = " , L[1]     , "  sl_2 (0)  = " , L[2] , " ")
-    return F_opt, F, L_opt, L
+    return F, L, F_opt, L_opt
 end
 
 # main(10,3,3)

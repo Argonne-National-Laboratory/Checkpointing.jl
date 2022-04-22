@@ -327,7 +327,7 @@ function Revolve(
     return revolve
 end
 
-function checkpoint_mutable(body::Function, alg::Online_r2, model_input::MT, shadowmodel::MT) where {MT}
+function checkpoint_struct(body::Function, alg::Online_r2, model_input::MT, shadowmodel::MT) where {MT}
     model = deepcopy(model_input)
     storemap = Dict{Int32,Int32}()
     check = 0

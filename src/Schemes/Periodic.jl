@@ -46,7 +46,7 @@ function forwardcount(periodic::Periodic)
     end
 end
 
-function checkpoint_mutable(body::Function, alg::Periodic, model_input::MT, shadowmodel::MT) where{MT}
+function checkpoint_struct(body::Function, alg::Periodic, model_input::MT, shadowmodel::MT) where{MT}
     model = deepcopy(model_input)
     model_final = []
     model_check_outer = Array{MT}(undef, alg.acp)
