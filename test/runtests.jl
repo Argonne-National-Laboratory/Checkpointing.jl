@@ -2,11 +2,17 @@ using Test
 using Checkpointing
 using LinearAlgebra
 # All tested AD tools
-using Enzyme
+using ForwardDiff, ReverseDiff, Zygote, Enzyme
 # Include all the AD tool interfaces through `jacobian()`
 include("../examples/adtools.jl")
 
 @testset "Testing Checkpointing.jl" begin
+    @testset "Testing Enzyme..." begin
+        include("speelpenning.jl")
+        errf, errg = main()
+        @test isapprox(errf, 0.0; atol = 1e-15)
+        @test isapprox(errg, 0.0; atol = 1e-15)
+    end
     @testset "Testing Revolve..." begin
         global steps = 50
         global checkpoints = 7
@@ -23,17 +29,12 @@ include("../examples/adtools.jl")
         include("jacobian.jl")
     end
     @testset "Test optcontrol" begin
-        include("../examples/optcontrol.jl")
+        include("../examples/deprecated/optcontrol.jl")
         @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
             @testset "Testing Revolve..." begin
-                # Enzyme segfaults if the garbage collector is enabled
-                if isa(adtool, EnzymeADTool)
-                    GC.gc()
-                    GC.enable(false)
-                end
                 global steps = 100
                 global snaps = 3
-                global info = 1
+                global info = 0
 
                 function store(F_H, F_C,t, i)
                     F_C[1,i] = F_H[1]
@@ -80,7 +81,7 @@ include("../examples/adtools.jl")
     end
 
     @testset "Test mutable optcontrol" begin
-        include("../examples/mutable/optcontrol.jl")
+        include("../examples/optcontrol.jl")
         @testset "Testing Revolve..." begin
             global steps = 100
             global snaps = 3

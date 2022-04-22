@@ -39,7 +39,7 @@ function jacobian(tobedifferentiated, F_H, ::AbstractADTool)
     error("No AD tool interface implemented")
 end
 
-export AbstractADTool, jacobian, @checkpoint, @checkpoint_mutable, checkpoint_mutable
+export AbstractADTool, jacobian, @checkpoint, @checkpoint_struct, checkpoint_struct
 
 include("deprecated.jl")
 include("Schemes/Revolve.jl")
@@ -81,7 +81,7 @@ function create_tangent(shadowmodel::MT) where {MT}
 end
 
 function ChainRulesCore.rrule(
-    ::typeof(Checkpointing.checkpoint_mutable),
+    ::typeof(Checkpointing.checkpoint_struct),
     body::Function,
     alg::Scheme,
     model::MT,
@@ -91,25 +91,25 @@ function ChainRulesCore.rrule(
     for i in 1:alg.steps
         body(model)
     end
-    function checkpoint_mutable_pullback(dmodel)
+    function checkpoint_struct_pullback(dmodel)
         copyto!(shadowmodel, dmodel)
-        model = checkpoint_mutable(body, alg, model_input, shadowmodel)
+        model = checkpoint_struct(body, alg, model_input, shadowmodel)
         dshadowmodel = create_tangent(shadowmodel)
         return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent()
     end
-    return model, checkpoint_mutable_pullback
+    return model, checkpoint_struct_pullback
 end
 
-macro checkpoint_mutable(alg, model, shadowmodel, loop)
+macro checkpoint_struct(alg, model, shadowmodel, loop)
     ex = quote
-        $model = checkpoint_mutable($alg, $model, $shadowmodel) do $model
+        $model = checkpoint_struct($alg, $model, $shadowmodel) do $model
             $(loop.args[2])
         end
     end
     esc(ex)
 end
 
-function checkpoint_mutable(body::Function, alg, model_input::MT, shadowmodel::MT) where {MT}
+function checkpoint_struct(body::Function, alg, model_input::MT, shadowmodel::MT) where {MT}
     error("No checkpointing scheme implemented for algorithm $(typeof(alg)).")
 end
 
