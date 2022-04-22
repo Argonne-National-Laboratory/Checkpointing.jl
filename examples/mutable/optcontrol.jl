@@ -4,6 +4,7 @@
 # Technique for Resilience. United States: N. p., 2016. https://www.osti.gov/biblio/1364654.
 
 using Checkpointing
+using Zygote
 
 
 include("optcontrolfunc.jl")
@@ -62,14 +63,18 @@ function muoptcontrol(scheme, steps)
     # t and h are not active so, set their adjoints to zero.
     shadowmodel = Model(L, L_H, 0.0, 0.0)
 
-    @checkpoint_mutable scheme model shadowmodel for i in 1:steps
-        model.F_H .= model.F
-        advance(model)
-        model.t += h 
+    function foo(model::Model)
+        @checkpoint_mutable scheme model shadowmodel for i in 1:steps
+            model.F_H .= model.F
+            advance(model)
+            model.t += h
+        end
+        return model.F[1]
     end
+    g = Zygote.gradient(foo,model)
 
     F = model.F
-    L = shadowmodel.F
+    L = [g[1].F[1], g[1].F[2]]
 
     F_opt = Array{Float64, 1}(undef, 2)
     L_opt = Array{Float64, 1}(undef, 2)
@@ -80,7 +85,7 @@ function muoptcontrol(scheme, steps)
     println("y_1 (1)  = " , F[1] , "  y_2 (1)  = " , F[2] , " \n\n")
     println("l_1*(0)  = " , L_opt[1] , "  l_2*(0)  = " , L_opt[2])
     println("l_1 (0)  = " , L[1]     , "  sl_2 (0)  = " , L[2] , " ")
-    return model, shadowmodel, F_opt, L_opt
+    return F, L, F_opt, L_opt
 end
 
 # main(10,3,3)

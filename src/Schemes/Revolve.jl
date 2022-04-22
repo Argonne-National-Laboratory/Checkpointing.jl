@@ -373,7 +373,6 @@ function checkpoint_mutable(body::Function, alg::Revolve, model_input::MT, shado
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
             model_final =  deepcopy(model)
-            copyto!(model_input, deepcopy(model))
             Enzyme.autodiff(body, Duplicated(model,shadowmodel))
         elseif (next_action.actionflag == Checkpointing.uturn)
             Enzyme.autodiff(body, Duplicated(model,shadowmodel))

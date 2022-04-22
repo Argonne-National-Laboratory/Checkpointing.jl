@@ -58,7 +58,7 @@ function checkpoint_mutable(body::Function, alg::Periodic, model_input::MT, shad
             body(model)
         end
     end
-    copyto!(model_input, deepcopy(model))
+    model_final = deepcopy(model)
     for i = alg.acp:-1:1
         model = deepcopy(model_check_outer[i])
         for j= 1:alg.period
