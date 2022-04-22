@@ -87,11 +87,10 @@ include("../examples/adtools.jl")
             global info = 0
 
             revolve = Revolve(steps, snaps; verbose=info)
-            model, shadowmodel, F_opt, L_opt = muoptcontrol(revolve, steps)
-            @test isapprox(F_opt, model.F, rtol=1e-4)
-            @test isapprox(L_opt, shadowmodel.F, rtol=1e-4)
+            F, L, F_opt, L_opt = muoptcontrol(revolve, steps)
+            @test isapprox(F_opt, F, rtol=1e-4)
+            @test isapprox(L_opt, L, rtol=1e-4)
         end
-
 
         @testset "Testing Periodic..." begin
             global steps = 100
@@ -99,9 +98,9 @@ include("../examples/adtools.jl")
             global info = 0
 
             periodic = Periodic(steps, snaps; verbose=info)
-            model, shadowmodel, F_opt, L_opt = muoptcontrol(periodic, steps)
-            @test isapprox(F_opt, model.F, rtol=1e-4)
-            @test isapprox(L_opt, shadowmodel.F, rtol=1e-4)
+            F, L, F_opt, L_opt = muoptcontrol(periodic, steps)
+            @test isapprox(F_opt, F, rtol=1e-4)
+            @test isapprox(L_opt, L, rtol=1e-4)
         end
     end
 end

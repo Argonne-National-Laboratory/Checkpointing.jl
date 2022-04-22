@@ -1,9 +1,8 @@
 module Checkpointing
 
+using ChainRulesCore
 using LinearAlgebra
 using Enzyme
-
-export mynorm
 
 abstract type Scheme end
 """
@@ -51,19 +50,67 @@ export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
 
 @generated function copyto!(dest::MT, src::MT) where {MT}
-        assignments = [
-            :( dest.$name = src.$name ) for name in fieldnames(MT)
-        ]
-        quote $(assignments...) end
+    assignments = [
+        :( dest.$name = src.$name ) for name in fieldnames(MT)
+    ]
+    quote $(assignments...) end
+end
+
+function iszerotangent(tangent::TT) where {TT}
+    isa(tangent, ZeroTangent)
+end
+
+@generated function copyto!(dest::MT, src::TT) where {MT,TT}
+    ex = quote
+    end
+    ex
+    assignments = [
+        :( dest.$name = src.$name ) for name in fieldnames(MT) if iszerotangent(src.name)
+    ]
+    ex = quote 
+        $(assignments...) 
+    end
+    return ex
+end
+
+to_named_tuple(p) = (; (v=>getfield(p, v) for v in fieldnames(typeof(p)))...)
+
+function create_tangent(shadowmodel::MT) where {MT}
+    shadowtuple = to_named_tuple(shadowmodel)
+    return Tangent{MT,typeof(shadowtuple)}(shadowtuple) 
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(Checkpointing.checkpoint_mutable),
+    body::Function,
+    alg::Scheme,
+    model::MT,
+    shadowmodel::MT,
+) where {MT}
+    model_input = deepcopy(model)
+    for i in 1:alg.steps
+        body(model)
+    end
+    function checkpoint_mutable_pullback(dmodel)
+        copyto!(shadowmodel, dmodel)
+        model = checkpoint_mutable(body, alg, model_input, shadowmodel)
+        dshadowmodel = create_tangent(shadowmodel)
+        return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent()
+    end
+    return model, checkpoint_mutable_pullback
 end
 
 macro checkpoint_mutable(alg, model, shadowmodel, loop)
     ex = quote
-        checkpoint_mutable($alg, $model, $shadowmodel) do $model
+        $model = checkpoint_mutable($alg, $model, $shadowmodel) do $model
             $(loop.args[2])
         end
     end
     esc(ex)
+end
+
+function checkpoint_mutable(body::Function, alg, model_input::MT, shadowmodel::MT) where {MT}
+    error("No checkpointing scheme implemented for algorithm $(typeof(alg)).")
 end
 
 end
