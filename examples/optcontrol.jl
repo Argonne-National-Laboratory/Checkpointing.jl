@@ -55,13 +55,11 @@ function muoptcontrol(scheme, steps)
     # L_H : set input adjoint to 0
     F = [1.0, 0.0]
     F_H = [0.0, 0.0]
-    L = [0.0, 1.0]
-    L_H = [0.0, 0.0]
     t = 0.0
     h = 1.0/steps
     model = Model(F, F_H, t, h)
-    # t and h are not active so, set their adjoints to zero.
-    shadowmodel = Model(L, L_H, 0.0, 0.0)
+    # Just make sure it's all zero.
+    shadowmodel = Model([0.0,0.0], [0.0,0.0], 0.0, 0.0)
 
     function foo(model::Model)
         @checkpoint_struct scheme model shadowmodel for i in 1:steps
@@ -69,7 +67,7 @@ function muoptcontrol(scheme, steps)
             advance(model)
             model.t += h
         end
-        return model.F[1]
+        return model.F[2]
     end
     g = Zygote.gradient(foo,model)
 

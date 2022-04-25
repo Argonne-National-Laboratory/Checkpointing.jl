@@ -56,21 +56,12 @@ export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, Diffrac
     quote $(assignments...) end
 end
 
-function iszerotangent(tangent::TT) where {TT}
-    isa(tangent, ZeroTangent)
-end
-
-@generated function copyto!(dest::MT, src::TT) where {MT,TT}
-    ex = quote
+function copyto!(dest::MT, src::TT) where {MT,TT}
+    for name in (fieldnames(MT))
+        if !isa(src[name], ChainRulesCore.ZeroTangent)
+            setfield!(dest, name, convert(typeof(getfield(dest, name)), src[name]))
+        end
     end
-    ex
-    assignments = [
-        :( dest.$name = src.$name ) for name in fieldnames(MT) if iszerotangent(src.name)
-    ]
-    ex = quote 
-        $(assignments...) 
-    end
-    return ex
 end
 
 to_named_tuple(p) = (; (v=>getfield(p, v) for v in fieldnames(typeof(p)))...)

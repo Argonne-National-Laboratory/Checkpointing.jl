@@ -42,7 +42,7 @@ function forwardcount(periodic::Periodic)
     elseif periodic.steps < 1
         error("Periodic forwardcount: error: steps < 1")
     elseif mod(periodic.steps, periodic.acp) != 0
-        error("Periodic forwardcount: error: steps ", periodic.steps, "not divisible by checkpoints", periodic.acp)
+        error("Periodic forwardcount: error: steps ", periodic.steps, " not divisible by checkpoints ", periodic.acp)
     end
 end
 
