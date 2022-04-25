@@ -2,7 +2,9 @@
 
 ![CI](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/workflows/Run%20tests/badge.svg?branch=main)
 
-This package provides checkpointing schemes for adjoint computation using automatic differentiation (AD) of time stepping loops. The schemes are agnostic to the ADTool being used and can be easily interfaced with any Julia AD tool. Currently the package provides the following checkpointing schemes:
+This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
+
+The schemes are agnostic to the ADTool being used and can be easily interfaced with any Julia AD tool. Currently the package provides the following checkpointing schemes:
 
 1. Revolve/Binomial checkpointing [1]
 2. Periodic checkpointing
@@ -15,54 +17,79 @@ add Checkpointing
 
 ## Interface with an AD Tool
 
-Currently, `Checkpointing.jl` interfaces with an AD tool through the computation of a Jacobian by implementing a `jacobian` method. The following describes the interface for `ReverseDiff.jl`
+## Usage: Example 1D heat equation
+
+We present an example code where Zygote is used to differentiate the implementation of the explicit 1D heat equation. The macro `@checkpointing_struct` covers the transformation of `for` loops with `1:tsteps` ranges where `tsteps=500` is the number of timesteps. As a checkpointing scheme we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
 
 ```julia
+# Explicit 1D heat equation
 using Checkpointing
+using Plots
+using Zygote
 
-struct ReverseDiffADTool <: AbstractADTool end
-
-function Checkpointing.jacobian(tobedifferentiated, F_H, ::ReverseDiffADTool)
-    return ReverseDiff.jacobian(tobedifferentiated, F_H)
+mutable struct Heat
+    Tnext::Vector{Float64}
+    Tlast::Vector{Float64}
+    n::Int
+    λ::Float64
+    tsteps::Int
 end
+
+function advance(heat)
+    next = heat.Tnext
+    last = heat.Tlast
+    λ = heat.λ
+    n = heat.n
+    for i in 2:(n-1)
+        next[i] = last[i] + λ*(last[i-1]-2*last[i]+last[i+1])
+    end
+    return nothing
+end
+
+
+function sumheat(heat::Heat)
+    # AD: Create shadow copy for derivatives 
+    shadowheat = Heat(zeros(n), zeros(n), 0, 0.0, 0)
+    @checkpoint_struct revolve heat shadowheat for i in 1:tsteps
+        heat.Tlast .= heat.Tnext
+        advance(heat)
+    end
+    return reduce(+, heat.Tnext)
+end
+
+n = 100
+Δx=0.1
+Δt=0.001
+# Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+λ = 0.5
+# time steps
+tsteps = 500
+
+# Create object from struct
+heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+
+# Boundary conditions
+heat.Tnext[1]   = 20.0
+heat.Tnext[end] = 0
+
+# Set up AD
+# Number of available snapshots
+snaps = 4
+verbose = 0
+revolve = Revolve(tsteps, snaps; verbose=verbose)
+
+# Compute gradient
+g = Zygote.gradient(sumheat,heat)
+
+# Plot function values
+plot(heat.Tnext)
+# Plot gradient with respect to sum(T).
+plot(g[1].Tnext[2:end-1])
 ```
-The interfaces for `Diffractor.jl`, `Enzyme.jl`, `ForwardDiff.jl`, `ReverseDiff.jl`, and `Zygote.jl` are implemented in `examples/adtools.jl`.
-
-## Usage
-
-The macro `@checkpointing` covers the transformation of `for` loops with `1:steps` ranges where `steps` is the number of timesteps:
-
-```julia
-@checkpoint scheme adtool for i in 1:steps
-    F_H = [F[1], F[2]]
-    F = advance(F_H,t,h)
-    t += h
-end
-```
-
-where `adtool` is one of the interface AD tools (e.g. `ReverseDiffADTool()`) and scheme is a adjoint checkpointing scheme like for example revolve.
-```julia
-function store(x::Vector, c::Vector, t::Int64, s::Int64)
-    c[1,s] = x[1]
-    c[2,s] = x[2]
-    c[3,s] = t
-    return
-end
-
-function restore(c, i)
-    x = [c[1,i], c[2,i]]
-    t = c[3,i]
-    return x, t
-end
-Revolve(steps, checkpoints, store, store; verbose=verbose)
-```
-`Revolve` needs the functions `store` and `restore` for storing and restoring the `i`-th checkpoint `c[i]` with variables `x` and `t`. `steps` is the total number of timesteps while `checkpoints` is the number of available checkpoints.
-
 ## Future
 
 The following features are planned for development:
 
-* Integration with (`ChainRules.jl`)[https://github.com/JuliaDiff/ChainRules.jl] to generate rules for timestepping loops
 * Online checkpointing schemes for adaptive timestepping
 * Composition of checkpointing schemes
 * Multi-level checkpointing schemes
