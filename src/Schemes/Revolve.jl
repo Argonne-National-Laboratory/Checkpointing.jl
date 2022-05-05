@@ -1,7 +1,11 @@
-# This is a Julia adaptation of the functionality of Revolve; see Alg. 799 published by Griewank et al.
-# A minor extension is the  optional `bundle` parameter that allows to treat as many loop
-# iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
+"""
+    Revolve
 
+This is a Julia adaptation of the functionality of Revolve; see Alg. 799 published by Griewank et al.
+A minor extension is the  optional `bundle` parameter that allows to treat as many loop
+iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
+
+"""
 mutable struct Revolve <: Scheme
     steps::Int
     bundle::Int
@@ -354,7 +358,11 @@ function forwardcount(revolve::Revolve)
     return ret
 end
 
-function checkpoint_struct(body::Function, alg::Revolve, model_input::MT, shadowmodel::MT) where {MT}
+function checkpoint_struct(body::Function,
+        alg::Revolve,
+        model_input::MT,
+        shadowmodel::MT
+    ) where {MT}
     model = deepcopy(model_input)
     storemap = Dict{Int32,Int32}()
     check = 0

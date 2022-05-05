@@ -1,6 +1,5 @@
 # Checkpointing
-
-![CI](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/workflows/Run%20tests/badge.svg?branch=main)
+[![][build-stable-img]][build-url] [![][docs-stable-img]][docs-stable-url]
 
 This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
 
@@ -98,3 +97,7 @@ The following features are planned for development:
 
 This work is supported by the NSF Cyberinfrastructure for Sustained Scientific Innovation (CSSI) program project (DJ4Earth)[https://dj4earth.github.io/]
 
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-stable-url]: https://Argonne-National-Laboratory.github.io/Checkpointing.jl/
+[build-url]: https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions?query=workflow/actions?query=workflow
+[build-stable-img]: https://github.com/Argonne-National-Laboratory/Checkpointing.jl/workflows/Run%20tests/badge.svg?branch=main
