@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - develop
   pull_request:
     types: [opened, synchronize, reopened]
   schedule:
@@ -12,12 +11,15 @@ on:
 
 jobs:
   test-github-cpuonly:
+    env:
+      DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-          os: [ubuntu-20.04]
-          julia-version: ['1.7']
-          julia-arch: [x64]
+        os: [ubuntu-20.04]
+        julia-version: ['1.7']
+        julia-arch: [x64]
 
     steps:
       - uses: actions/checkout@v2
@@ -27,3 +29,4 @@ jobs:
       - run: julia --project deps/deps.jl
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
+      - run: julia --project=docs/ docs/make.jl

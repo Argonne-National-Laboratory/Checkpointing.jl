@@ -3,6 +3,12 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
+"""
+    Periodic
+
+Periodic checkpointing scheme.
+
+"""
 mutable struct Periodic <: Scheme
     steps::Int
     acp::Int
@@ -46,7 +52,11 @@ function forwardcount(periodic::Periodic)
     end
 end
 
-function checkpoint_struct(body::Function, alg::Periodic, model_input::MT, shadowmodel::MT) where{MT}
+function checkpoint_struct(body::Function,
+        alg::Periodic,
+        model_input::MT,
+        shadowmodel::MT
+    ) where{MT}
     model = deepcopy(model_input)
     model_final = []
     model_check_outer = Array{MT}(undef, alg.acp)
