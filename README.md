@@ -1,5 +1,5 @@
 # Checkpointing
-[![][build-stable-img]][build-url] [![][docs-stable-img]][docs-stable-url]
+[![][build-stable-img]][build-url] [![][docs-stable-img]][docs-stable-url] [![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
 
 This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
 
