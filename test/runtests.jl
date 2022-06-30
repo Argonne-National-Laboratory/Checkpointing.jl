@@ -85,12 +85,12 @@ include("../examples/adtools.jl")
         end
     end
 
-    @testset "Test mutable optcontrol" begin
+    @testset "Test optcontrol" begin
         include("../examples/optcontrol.jl")
         @testset "Testing Revolve..." begin
-            global steps = 100
-            global snaps = 3
-            global info = 0
+            steps = 100
+            snaps = 3
+            info = 0
 
             revolve = Revolve(steps, snaps; verbose=info)
             F, L, F_opt, L_opt = muoptcontrol(revolve, steps)
@@ -99,14 +99,40 @@ include("../examples/adtools.jl")
         end
 
         @testset "Testing Periodic..." begin
-            global steps = 100
-            global snaps = 4
-            global info = 0
+            steps = 100
+            snaps = 4
+            info = 0
 
             periodic = Periodic(steps, snaps; verbose=info)
             F, L, F_opt, L_opt = muoptcontrol(periodic, steps)
             @test isapprox(F_opt, F, rtol=1e-4)
             @test isapprox(L_opt, L, rtol=1e-4)
+        end
+    end
+    @testset "Test heat" begin
+        include("../examples/heat.jl")
+        @testset "Testing Revolve..." begin
+            steps = 500
+            snaps = 4
+            info = 0
+
+            revolve = Revolve(steps, snaps; verbose=info)
+            T, dT = heat(revolve, steps)
+
+            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+        end
+
+        @testset "Testing Periodic..." begin
+            steps = 500
+            snaps = 4
+            info = 0
+
+            periodic = Periodic(steps, snaps; verbose=info)
+            T, dT = heat(periodic, steps)
+
+            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
     end
 end
