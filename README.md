@@ -44,10 +44,8 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat)
-    # AD: Create shadow copy for derivatives 
-    shadowheat = Heat(zeros(n), zeros(n), 0, 0.0, 0)
-    @checkpoint_struct revolve heat shadowheat for i in 1:tsteps
+function sumheat(heat::Heat, chkpt::Scheme)
+    @checkpoint_struct revolve heat for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -76,7 +74,7 @@ verbose = 0
 revolve = Revolve(tsteps, snaps; verbose=verbose)
 
 # Compute gradient
-g = Zygote.gradient(sumheat,heat)
+g = Zygote.gradient(sumheat, heat, revolve)
 
 # Plot function values
 plot(heat.Tnext)

@@ -38,7 +38,7 @@ end
 """
     Action
 
-Stores the state of the checkpointing scheme after an action is taken. 
+Stores the state of the checkpointing scheme after an action is taken.
     * `actionflag` is the next action
     * `iteration` is number of iterations for move forward
     * `startiteration` is the loop step to start from
@@ -87,7 +87,7 @@ to_named_tuple(p) = (; (v=>getfield(p, v) for v in fieldnames(typeof(p)))...)
 
 function create_tangent(shadowmodel::MT) where {MT}
     shadowtuple = to_named_tuple(shadowmodel)
-    return Tangent{MT,typeof(shadowtuple)}(shadowtuple) 
+    return Tangent{MT,typeof(shadowtuple)}(shadowtuple)
 end
 
 function ChainRulesCore.rrule(
@@ -98,6 +98,7 @@ function ChainRulesCore.rrule(
     shadowmodel::MT,
 ) where {MT}
     model_input = deepcopy(model)
+    # shadowmodel = deepcopy(model)
     for i in 1:alg.steps
         body(model)
     end
@@ -108,6 +109,29 @@ function ChainRulesCore.rrule(
         return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent()
     end
     return model, checkpoint_struct_pullback
+end
+
+"""
+    @checkpoint_struct(
+        alg,
+        model,
+        loop,
+    )
+
+This macro is supposed to be only used in conjunction with ChainRules. It does
+not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
+`loop` expression. `model` is the primal struct. `shadowmodel` contains the
+adjoints and is created here.  It is supposed to be initialized by ChainRules.
+
+"""
+macro checkpoint_struct(alg, model, loop)
+    ex = quote
+        shadowmodel = deepcopy($model)
+        $model = checkpoint_struct($alg, $model, shadowmodel) do $model
+            $(loop.args[2])
+        end
+    end
+    esc(ex)
 end
 
 """

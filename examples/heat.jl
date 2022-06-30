@@ -1,6 +1,5 @@
 # Explicit 1D heat equation
 using Checkpointing
-using Plots
 using Zygote
 
 mutable struct Heat
@@ -23,41 +22,31 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat)
-    # AD: Create shadow copy for derivatives 
-    shadowheat = Heat(zeros(n), zeros(n), 0, 0.0, 0)
-    @checkpoint_struct revolve heat shadowheat for i in 1:tsteps
+function sumheat(heat::Heat, chkpscheme::Scheme)
+    # AD: Create shadow copy for derivatives
+    @checkpoint_struct chkpscheme heat for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
     return reduce(+, heat.Tnext)
 end
 
-n = 100
-Δx=0.1
-Δt=0.001
-# Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
-λ = 0.5
-# time steps
-tsteps = 500
+function heat(scheme::Scheme, tsteps::Int)
+    n = 100
+    Δx=0.1
+    Δt=0.001
+    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+    λ = 0.5
 
-# Create object from struct
-heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+    # Create object from struct
+    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
-# Boundary conditions
-heat.Tnext[1]   = 20.0
-heat.Tnext[end] = 0
+    # Boundary conditions
+    heat.Tnext[1]   = 20.0
+    heat.Tnext[end] = 0
 
-# Set up AD
-# Number of available snapshots
-snaps = 4
-verbose = 0
-revolve = Revolve(tsteps, snaps; verbose=verbose)
+    # Compute gradient
+    g = Zygote.gradient(sumheat, heat, scheme)
 
-# Compute gradient
-g = Zygote.gradient(sumheat,heat)
-
-# Plot function values
-plot(heat.Tnext)
-# Plot gradient with respect to sum(T).
-plot(g[1].Tnext[2:end-1])
+    return heat.Tnext, g[1].Tnext[2:end-1]
+end
