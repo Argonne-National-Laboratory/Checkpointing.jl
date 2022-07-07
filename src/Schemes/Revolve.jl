@@ -6,7 +6,7 @@ A minor extension is the  optional `bundle` parameter that allows to treat as ma
 iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
 """
-mutable struct Revolve <: Scheme
+mutable struct Revolve{MT} <: Scheme where {MT}
     steps::Int
     bundle::Int
     tail::Int
@@ -23,17 +23,19 @@ mutable struct Revolve <: Scheme
     verbose::Int
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
+    storage::AbstractStorage
 end
 
-function Revolve(
+function Revolve{MT}(
     steps::Int,
     checkpoints::Int,
     fstore::Union{Function,Nothing} = nothing,
     frestore::Union{Function,Nothing} = nothing;
+    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
     anActionInstance::Union{Nothing,Action} = nothing,
     bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0
-)
+) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
@@ -69,7 +71,11 @@ function Revolve(
     firstuturned    = false
     stepof = Vector{Int}(undef, acp+1)
 
-    revolve = Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+    revolve = Revolve{MT}(
+        steps, bundle, tail, acp, cstart, cend, numfwd,
+        numinv, numstore, rwcp, prevcend, firstuturned,
+        stepof, verbose, fstore, frestore, storage
+    )
 
     if verbose > 0
         predfwdcnt = forwardcount(revolve)
@@ -366,7 +372,7 @@ function checkpoint_struct(body::Function,
     model = deepcopy(model_input)
     storemap = Dict{Int32,Int32}()
     check = 0
-    model_check = Array{MT}(undef, alg.acp)
+    model_check = alg.storage
     model_final = []
     while true
         next_action = next_action!(alg)

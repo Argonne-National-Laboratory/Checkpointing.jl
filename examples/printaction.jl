@@ -2,7 +2,7 @@ using Checkpointing
 
 function main(steps, checkpoints; verbose=0)
     store = function f() end
-    revolve = Revolve(steps, checkpoints, store, store; verbose=verbose)
+    revolve = Revolve{Nothing}(steps, checkpoints, store, store; verbose=verbose)
     guessed_checkpoints = guess(revolve)
     @show guessed_checkpoints
     println("Revolve suggests : $guessed_checkpoints checkpoints for a factor of $(factor(revolve, steps,guessed_checkpoints))")

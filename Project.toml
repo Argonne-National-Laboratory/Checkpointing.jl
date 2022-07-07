@@ -1,16 +1,19 @@
 name = "Checkpointing"
 uuid = "eb46d486-4f9c-4c3d-b445-a617f2a2f1ca"
 authors = ["Michel Schanen <mschanen@anl.gov>", "Sri Hari Krishna Narayanan <snarayan@mcs.anl.gov>"]
-version = "0.4.0"
+version = "0.5.0"
 
 [deps]
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [compat]
 ChainRulesCore = "1.0"
 Enzyme = "0.9"
+HDF5 = "0.16"
 julia = "1.7"
 
 [extras]
