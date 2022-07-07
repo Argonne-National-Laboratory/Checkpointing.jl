@@ -71,7 +71,7 @@ heat.Tnext[end] = 0
 # Number of available snapshots
 snaps = 4
 verbose = 0
-revolve = Revolve(tsteps, snaps; verbose=verbose)
+revolve = Revolve{Heat}(tsteps, snaps; verbose=verbose)
 
 # Compute gradient
 g = Zygote.gradient(sumheat, heat, revolve)
