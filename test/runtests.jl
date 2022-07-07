@@ -53,7 +53,7 @@ include("../examples/adtools.jl")
                     t = F_C[3,i]
                     return F_H, t
                 end
-                revolve = Revolve(steps, snaps, store, restore; verbose=info)
+                revolve = Revolve{Nothing}(steps, snaps, store, restore; verbose=info)
                 F_opt, F_final, L_opt, L = optcontrol(revolve, steps, adtool)
                 @test isapprox(F_opt, F_final, rtol=1e-4)
                 @test isapprox(L_opt, L, rtol=1e-4)
@@ -77,7 +77,7 @@ include("../examples/adtools.jl")
                     t = F_C[3,i]
                     return F_H, t
                 end
-                periodic = Periodic(steps, snaps, store, restore; verbose=info)
+                periodic = Periodic{Nothing}(steps, snaps, store, restore; verbose=info)
                 F_opt, F_final, L_opt, L = optcontrol(periodic, steps, adtool)
                 @test isapprox(F_opt, F_final, rtol=1e-4)
                 @test isapprox(L_opt, L, rtol=1e-4)
@@ -92,7 +92,7 @@ include("../examples/adtools.jl")
             snaps = 3
             info = 0
 
-            revolve = Revolve(steps, snaps; verbose=info)
+            revolve = Revolve{Model}(steps, snaps; verbose=info)
             F, L, F_opt, L_opt = muoptcontrol(revolve, steps)
             @test isapprox(F_opt, F, rtol=1e-4)
             @test isapprox(L_opt, L, rtol=1e-4)
@@ -103,20 +103,20 @@ include("../examples/adtools.jl")
             snaps = 4
             info = 0
 
-            periodic = Periodic(steps, snaps; verbose=info)
+            periodic = Periodic{Model}(steps, snaps; verbose=info)
             F, L, F_opt, L_opt = muoptcontrol(periodic, steps)
             @test isapprox(F_opt, F, rtol=1e-4)
             @test isapprox(L_opt, L, rtol=1e-4)
         end
     end
-    @testset "Test heat" begin
+    @testset "Test heat example" begin
         include("../examples/heat.jl")
         @testset "Testing Revolve..." begin
             steps = 500
             snaps = 4
             info = 0
 
-            revolve = Revolve(steps, snaps; verbose=info)
+            revolve = Revolve{Heat}(steps, snaps; verbose=info)
             T, dT = heat(revolve, steps)
 
             @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
@@ -128,7 +128,33 @@ include("../examples/adtools.jl")
             snaps = 4
             info = 0
 
-            periodic = Periodic(steps, snaps; verbose=info)
+            periodic = Periodic{Heat}(steps, snaps; verbose=info)
+            T, dT = heat(periodic, steps)
+
+            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+        end
+    end
+    @testset "Test HDF5 storage using heat example" begin
+        include("../examples/heat.jl")
+        @testset "Testing Revolve..." begin
+            steps = 500
+            snaps = 4
+            info = 0
+
+            revolve = Revolve{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+            T, dT = heat(revolve, steps)
+
+            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+        end
+
+        @testset "Testing Periodic..." begin
+            steps = 500
+            snaps = 4
+            info = 0
+
+            periodic = Periodic{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
             T, dT = heat(periodic, steps)
 
             @test isapprox(norm(T), 66.21987468492061, atol=1e-11)

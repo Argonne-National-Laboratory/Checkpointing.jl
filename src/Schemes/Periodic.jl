@@ -9,24 +9,26 @@
 Periodic checkpointing scheme.
 
 """
-mutable struct Periodic <: Scheme
+mutable struct Periodic{MT} <: Scheme where {MT}
     steps::Int
     acp::Int
     period::Int
     verbose::Int
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
+    storage::AbstractStorage
 end
 
-function Periodic(
+function Periodic{MT}(
     steps::Int,
     checkpoints::Int,
     fstore::Union{Function,Nothing} = nothing,
     frestore::Union{Function,Nothing} = nothing;
+    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
     anActionInstance::Union{Nothing,Action} = nothing,
     bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0
-)
+) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
@@ -36,7 +38,7 @@ function Periodic(
     acp             = checkpoints
     period          = div(steps, checkpoints)
 
-    periodic = Periodic(steps, acp, period, verbose, fstore, frestore)
+    periodic = Periodic{MT}(steps, acp, period, verbose, fstore, frestore, storage)
 
     forwardcount(periodic)
     return periodic
@@ -59,7 +61,7 @@ function checkpoint_struct(body::Function,
     ) where{MT}
     model = deepcopy(model_input)
     model_final = []
-    model_check_outer = Array{MT}(undef, alg.acp)
+    model_check_outer = alg.storage
     model_check_inner = Array{MT}(undef, alg.period)
     check = 0
     for i = 1:alg.acp

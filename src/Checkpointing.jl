@@ -3,6 +3,8 @@ module Checkpointing
 using ChainRulesCore
 using LinearAlgebra
 using Enzyme
+using Serialization
+using HDF5
 
 """
     Scheme
@@ -59,6 +61,26 @@ function jacobian(tobedifferentiated, F_H, ::AbstractADTool)
 end
 
 export Scheme, AbstractADTool, jacobian, @checkpoint, @checkpoint_struct, checkpoint_struct
+
+function serialize(x)
+    s = IOBuffer()
+    Serialization.serialize(s, x)
+    take!(s)
+end
+
+function deserialize(x)
+    s = IOBuffer(x)
+    Serialization.deserialize(s)
+end
+
+export serialize, deserialize
+
+abstract type AbstractStorage end
+
+include("Storage/ArrayStorage.jl")
+include("Storage/HDF5Storage.jl")
+
+export AbstractStorage, ArrayStorage, HDF5Storage
 
 include("deprecated.jl")
 include("Schemes/Revolve.jl")
