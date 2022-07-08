@@ -57,7 +57,7 @@ verbose = 0
 revolve = Revolve{Heat}(tsteps, snaps; verbose=verbose)
 
 # Compute gradient
-g = Zygote.gradient(sumheat,heat)
+g = Zygote.gradient(sumheat, heat, revolve)
 ```
 
 Plot function values:
