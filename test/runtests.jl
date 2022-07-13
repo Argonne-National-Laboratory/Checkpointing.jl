@@ -25,6 +25,7 @@ include("../examples/adtools.jl")
     end
     @testset "Test optcontrol" begin
         include("../examples/optcontrol.jl")
+        include("../examples/optcontrolwhile.jl")
         @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
             @testset "Testing Revolve..." begin
                 # Enzyme segfaults if the garbage collector is enabled
@@ -101,7 +102,7 @@ include("../examples/adtools.jl")
                     return F_H, t
                 end
                 online = Online_r2(snaps, store, restore)
-                F_opt, F_final, L_opt, L = optcontrol(online, steps, adtool)
+                F_opt, F_final, L_opt, L = optcontrolwhile(online, steps, adtool)
                 @test isapprox(F_opt, F_final, rtol=1e-4)
                 @test isapprox(L_opt, L, rtol=1e-4)
             end

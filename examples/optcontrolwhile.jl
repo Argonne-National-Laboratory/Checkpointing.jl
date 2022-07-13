@@ -40,7 +40,7 @@ function header()
 end
 
 
-function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
+function optcontrolwhile(scheme, steps, adtool=ReverseDiffADTool())
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
     println("INFO = 1 -> calculate only approximate solution")
