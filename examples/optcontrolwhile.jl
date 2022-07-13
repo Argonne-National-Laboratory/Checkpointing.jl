@@ -62,7 +62,6 @@ function optcontrol(scheme, steps, adtool=ReverseDiffADTool())
     #Any test for convergence can be used here instead
     #The number of steps is not provided to the online checkpointing scheme
     @checkpoint scheme adtool while i < steps
-        println("i = ", i,  " steps=", steps)
         F_H = [F[1], F[2]]
         F = advance(F_H,t,h)
         t += h
