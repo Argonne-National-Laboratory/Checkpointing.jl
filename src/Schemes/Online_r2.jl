@@ -67,7 +67,7 @@ function Online_r2(
         ord_ch[i] = -1
         num_rep[i] = -1
     end
-    verbose = true
+    verbose = false
     revolve = Revolve(typemax(Int64), acp, fstore, frestore; verbose=3)
     online_r2 = Online_r2(check, capo, acp, numfwd, numcmd, numstore, 
                             oldcapo, ind, oldind, iter, incr, offset, t, 
@@ -87,7 +87,7 @@ function update_revolve(online::Online_r2, steps)
     online.revolve.numstore= online.acp
     online.revolve.prevcend= steps
     online.revolve.firstuturned=false
-    online.revolve.verbose= 3
+    online.revolve.verbose= 0
     num_ch = Vector{Int}(undef, online.acp)
     for i=1:online.acp
         num_ch[i] = 1
