@@ -1,328 +1,350 @@
-# TODO Add Explanation
+# This provides the functionality of online checkpointing. 
+# It is based on an implementation of the Online_r2 algorithm from:
+#   Philipp Stumm and Andrea Walther. 2010. New Algorithms for
+#   Optimal Online Checkpointing. SIAM J. Sci. Comput. 32, 2 
+#   (March 2010), 836–854. https://doi.org/10.1137/080742439
+# It is, furthermore, a Julia translation of the original C++ 
+# code distributed by the PyRevolve project:
+#   https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
+# TODO: Extend Online_r2 to Online_r3
 
 mutable struct Online_r2 <: Scheme
-    #check is last stored checkpoint
 	check::Int
-	#capo is the temporary fine
 	capo::Int
-    tail::Int
     acp::Int
-    cstart::Int
-    cend::Int
     numfwd::Int
     numcmd::Int
     numstore::Int
-    rwcp::Int
-    prevcend::Int
-    firstuturned::Bool
-    verbose::Int
+    oldcapo::Int
+    ind::Int
+    oldind::Int
+    iter::Int
+    incr::Int
+    offset::Int
+    t::Int
+    verbose::Bool
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
     ch::Vector{Int}
     ord_ch::Vector{Int}
     num_rep::Vector{Int}
+    revolve::Revolve
 end
 
 function Online_r2(
-    #steps::Int,
     checkpoints::Int,
     fstore::Union{Function,Nothing} = nothing,
     frestore::Union{Function,Nothing} = nothing,
     anActionInstance::Union{Nothing,Action} = nothing,
-    #bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0
 )
     if !isa(anActionInstance, Nothing)
-        # same as default init above
         anActionInstance.actionflag = 0
         anActionInstance.iteration  = 0
         anActionInstance.cpNum      = 0
     end
-    if steps<0
-       error("Online_r2: negative steps")
-    elseif checkpoints < 0
-       error("Online_r2: negative checkpoints")
+    if checkpoints < 0
+       @error("Online_r2: negative checkpoints")
     end
-    cstart = 0
-    tail   = 1
-    cend            = steps
     acp             = checkpoints
     numfwd          = 0
     numcmd          = 0
     numstore        = 0
-    rwcp            = -1
-    prevcend        = 0
-    firstuturned    = false
+    oldcapo         = 0
     check = -1
-    capo = -1
+    capo = 0
+    oldind = -1
+    ind = -1
+    iter = -1
+    incr = -1 
+    offset= -1
+    t=-1
     ch = Vector{Int}(undef, acp)
     ord_ch = Vector{Int}(undef, acp)
     num_rep = Vector{Int}(undef, acp)
-    revolve = Online_r2(check, capo, tail, acp, cstart, cend, numfwd, numcmd, numstore, rwcp, prevcend, firstuturned, verbose, fstore, frestore, ch, ord_ch, num_rep)
-    return revolve
+    for i in 1:acp
+        ch[i] = -1
+        ord_ch[i] = -1
+        num_rep[i] = -1
+    end
+    verbose = true
+    revolve = Revolve(typemax(Int64), acp, fstore, frestore; verbose=3)
+    online_r2 = Online_r2(check, capo, acp, numfwd, numcmd, numstore, 
+                            oldcapo, ind, oldind, iter, incr, offset, t, 
+                            verbose, fstore, frestore, ch, ord_ch, num_rep, revolve)
+    return online_r2
 end
 
-function next_action!(revolve::Online_r2)::Action
+function update_revolve(online::Online_r2, steps)
+    online.revolve = Revolve(steps, online.acp, online.fstore, online.frestore)
+    online.revolve.rwcp = online.revolve.acp-1
+    online.revolve.steps = steps
+    online.revolve.acp = online.acp
+    online.revolve.cstart =  steps-1
+    online.revolve.cend = steps
+    online.revolve.numfwd = steps-1
+    online.revolve.numinv= online.revolve.numfwd-1
+    online.revolve.numstore= online.acp
+    online.revolve.prevcend= steps
+    online.revolve.firstuturned=false
+    online.revolve.verbose= 3
+    num_ch = Vector{Int}(undef, online.acp)
+    for i=1:online.acp
+        num_ch[i] = 1
+        for j=1:online.acp
+            if (online.ch[j] < online.ch[i])
+                num_ch[i] = num_ch[i]+1
+            end
+        end
+    end
+    for i=1:online.acp
+        for j=1:online.acp
+            if (num_ch[j] == i)
+                online.ord_ch[i]=j; 
+            end
+        end
+    end
+    for j=1:online.acp
+        online.revolve.stepof[j] = online.ch[online.ord_ch[j]]
+    end
+    online.revolve.stepof[online.acp+1]=0   
+end
+
+function next_action!(online::Online_r2)::Action
     # Default values for next action
     actionflag     = none
-    info(" check = ", check,  " ch[check] ", ch[check], " capo ", capo) 
-    numcmd+=1
-    cpnum = 0
-
-    if ((check == -1) || ((ch[check] != capo) && (capo <= snaps-1)))
-    #condition for takeshot for r=1
-        oldcapo_o = capo
-        check += 1
-        ch[check] = capo
-        t = 0
-        if (snaps < 4)
-            for i in 0:snaps-1
-            #for(int i=0;i<snaps;i++)
-      	        num_rep[i] = 2
+    if online.verbose
+        if(online.check !=-1)
+            @info(online.check+1,  online.ch[online.check+1],  online.capo) 
+            for i in 1:online.acp
+                println("online.ch[",i,"] =", online.ch[i])
             end
-            incr = 2
-            iter = 1
-            oldind = snaps-1
         else
-            iter = 1
-            incr = 1
-            oldind = 1
-            for i in 0:snaps-1
-            #for(int i=0;i<snaps;i++)      
-      	        num_rep[i] = 1
-      	        ord_ch[i] = i
+            @info(online.check, online.capo) 
+            for i in 1:online.acp
+                println("online.ch[",i,"] =", online.ch[i])
             end
-            offset = snaps-1
         end
-        if (capo == snaps-1)
-            ind = 2
-            old_f = 1
+    end
+    online.numcmd+=1
+    #We use this logic because the C++ version uses short circuiting
+    cond2 = false
+    if online.check != -1
+      cond2 = online.ch[online.check+1] != online.capo
+    end 
+    online.oldcapo = online.capo
+    if ((online.check == -1) || ( cond2 && (online.capo <= online.acp-1)))
+    #condition for takeshot for r=1
+    #   (If no checkpoint has been taken before OR
+    #    If a store has not just occurred AND the iteration count is 
+    #    less than the total number of checkpoints)
+        if online.verbose
+            @info("condition for takeshot for r=1")
+        end
+        online.check += 1
+        online.ch[online.check+1] = online.capo
+        online.t = 0
+        if (online.acp < 4)
+            for i in 1:online.acp
+      	        online.num_rep[i] = 2
+            end
+            online.incr = 2
+            online.iter = 1
+            online.oldind = online.acp-1
+        else
+            online.iter = 1
+            online.incr = 1
+            online.oldind = 1
+            for i in 1:online.acp      
+      	        online.num_rep[i] = 1
+      	        online.ord_ch[i] = i-1
+            end
+            online.offset = online.acp-1
+        end
+        if (online.capo == online.acp-1)
+            online.ind = 2
         end    
         # Increase the number of takeshots and the corresponding checkpoint
-        numstore+=1
-        #checkpoint->number_of_writes[check]++
-        return Action(store, check, -1, -1)
-        #return ACTION::store
-    elseif (capo < snaps-1)
+        online.numstore+=1
+        return Action(store, online.capo-1, -1, online.check)
+    elseif (online.capo < online.acp-1)
     #condition for advance for r=1
-        capo = oldcapo_o+1
-        nunmfwd+=1
-        return Action(forward, capo, oldcapo_o, cpnum)
-        #return ACTION::advance
+    #   (the iteraton is less that the total number of checkpoints)
+        if online.verbose
+            @info("condition for advance for r=1")
+        end
+        online.capo = online.oldcapo+1
+        online.numfwd+=1
+        return Action(forward, online.capo, online.oldcapo, -1)
     else
     #Online_r2-Checkpointing for r=2
-        if (ch[check] == capo)
-        # condition for advance for r=2
-            if (snaps == 1)
-                capo = MAXINT-1
-      		    nunmfwd+=1
-                return Action(forward, capo, oldcapo_o, cpnum)
-      		    #return ACTION::advance
-            elseif (snaps == 2)
-                capo = ch[1]+incr
-      		    nunmfwd+=1
-                return Action(forward, capo, oldcapo_o, cpnum)
-      		    #return ACTION::advance
-            elseif (snaps == 3) 
-                nunmfwd+=incr
-      		    if (iter == 0)
-      			    capo = ch[oldind]
-                    for i=0:(t+1)/2
-      			        #for(int i=0;i<=(t+1)/2;i++)
-      				    capo += incr
-      				    incr = incr + 1
-      				    iter = iter + 1
+        if (online.ch[online.check+1] == online.capo)
+            # condition for advance for r=2
+            # (checkpoint has just occurred)
+            if online.verbose    
+                @info("Online_r2-condition for advance for r=2 online.acp=", online.acp)
+            end
+            if (online.acp == 1)
+                online.capo = BigInt(typemax(Int64))
+      		    online.numfwd+=1
+                return Action(forward, online.capo, online.oldcapo, -1)
+            elseif (online.acp == 2)
+                online.capo = online.ch[1+1]+online.incr
+      		    online.numfwd+=1
+                return Action(forward, online.capo, online.oldcapo, -1)
+            elseif (online.acp == 3) 
+                online.numfwd+=online.incr
+      		    if (online.iter == 0)
+      			    online.capo = online.ch[online.oldind+1]
+                    for i=0:(online.t+1)/2
+      				    online.capo += online.incr
+      				    online.incr = online.incr + 1
+      				    online.iter = online.iter + 1
                     end
       		    else
-      			    capo = ch[ind]+incr
-      			    incr = incr + 1
-      				iter = iter + 1
+      			    online.capo = online.ch[online.ind+1]+online.incr
+      			    online.incr = online.incr + 1
+      				online.iter = online.iter + 1
                 end
                 actionflag = forward
-                return Action(forward, capo, oldcapo_o, cpnum)
-      		    #return ACTION::advance
+                return Action(forward, online.capo, online.oldcapo, -1)
       	    else
-                if (capo == snaps-1)
-      			    capo = capo+2
-      		    	ind=snaps-1
-      			    nunmfwd+=2
-                    return Action(forward, capo, oldcapo_o, cpnum)
-      			    #return ACTION::advance
+                if online.verbose
+                     @info("Online_r2-condition for advance for r=2 online.acp-1=", online.acp-1," online.capo= ", online.capo)
                 end
-      		    if (output)
-      			    info(" iter ", iter,  " incr ", incr, "offset", offset)
+                if (online.capo == online.acp-1)
+      			    online.capo = online.capo+2
+      		    	online.ind=online.acp-1
+      			    online.numfwd+=2
+                    return Action(forward, online.capo, online.oldcapo, -1)
                 end
-      		    if (t == 0)
-      			    if (iter < offset)
-      				    capo = capo+1
-      				    nunmfwd+=1
+      		    if (online.t == 0)
+      			    if (online.iter < online.offset)
+      				    online.capo = online.capo+1
+      				    online.numfwd+=1
       			    else
-      				    capo = capo+2
-      				    nunmfwd+=2
+      				    online.capo = online.capo+2
+      				    online.numfwd+=2
                     end
-      			    if (offset == 1)
-      				    t+=1
+      			    if (online.offset == 1)
+      				    online.t += 1
                     end
-                    return Action(forward, capo, oldcapo_o, cpnum)
-      			    #return ACTION::advance
+                    return Action(forward, online.capo, online.oldcapo, -1)
                 end
-      		    if (output)
-                    info(" iter ", iter, "incr ", incr)
+      		    if (online.verbose)
+                    @info(" iter ", iter, "incr ", incr)
                 end
                 error(" not implemented yet")
-                return Action(done, capo, oldcapo_o, cpnum)
-      		    #return ACTION::error
+                return Action(done, online.capo, online.oldcapo, -1)
             end
         else
             #takeshot for r=2
-            if (snaps == 2)
-                ch[1] = capo
-      		    incr+=1
+            if (online.verbose)
+                @info("Online_r2-condition for takeshot for r=2 online.acp =", online.acp)
+            end
+            if (online.acp == 2)
+                online.ch[1+1] = online.capo
+                online.incr+=1
       		    #Increase the number of takeshots and the corresponding checkpoint
-      		    numstore+=1
-      		    #checkpoint->number_of_writes[1]++
-                return Action(store, check, -1, -1)
-      		    #return ACTION::takeshot
-            elseif (snaps == 3) 
-                ch[ind] = capo
-      		    check = ind
-      		    info(" iter ", iter, " num_rep[1] ", num_rep[1])
-      		    if (iter == num_rep[1])
-      			    iter = 0
-      			    t+=1
-      		    	oldind = ind
-      			    num_rep[1]+=1
-      			    ind = 2 - num_rep[1]%2
-      			    incr=1
-                  end
+      		    online.numstore+=1
+                return Action(store, online.capo-1, -1, 1+1)
+            elseif (online.acp == 3) 
+                online.ch[online.ind+1] = online.capo
+      		    online.check = online.ind
+                if (online.verbose)
+      		        @info(" iter ", online.iter, " online.num_rep[1] ", online.num_rep[1+1])
+                end
+      		    if (online.iter == online.num_rep[1+1])
+                    online.iter = 0
+      			    online.t+=1
+      		    	online.oldind = online.ind
+      			    online.num_rep[1+1]+=1
+      			    online.ind = 2 - online.num_rep[1+1]%2
+      			    online.incr=1
+                end
       		    #Increase the number of takeshots and the corresponding checkpoint
-      		    numstore+=1
-      		    #checkpoint->number_of_writes[check]++
-                return Action(store, check, -1, -1)
-      		    #return ACTION::takeshot
+      		    online.numstore+=1
+                return Action(store, online.capo-1, -1, online.check)
             else 
-                if (capo < snaps+2)
-      			    ch[ind] = capo
-      			    check = ind
-      			    if (capo == snaps+1)
-      				    oldind = ord_ch[snaps-1]
-      				    ind = ch[ord_ch[snaps-1]]
-      				    if (output)
-                            info(" oldind ", oldind, " ind ", ind)
+                if (online.verbose)
+                    @info(" online.capo ", online.capo, " online.acp ", online.acp)
+                end
+                if (online.capo < online.acp+2)
+      			    online.ch[online.ind+1] = online.capo
+      			    online.check = online.ind
+      			    if (online.capo == online.acp+1)
+                        online.oldind = online.ord_ch[online.acp-1+1]
+                        online.ind = online.ch[online.ord_ch[online.acp-1+1]+1]
+      				    if (online.verbose)
+                            @info(" oldind ", online.oldind, " ind ", online.ind)
                         end
-                        for k=snaps-1:-1:2
-      				    #for(int k=snaps-1;k>1;k--)
-      					    ord_ch[k]=ord_ch[k-1]
-      					    ch[ord_ch[k]] = ch[ord_ch[k-1]]
+                        for k=online.acp:-1:3
+      					    online.ord_ch[k]=online.ord_ch[k-1]
+      					    online.ch[online.ord_ch[k]+1] = online.ch[online.ord_ch[k-1]+1]
                         end
-      				    ord_ch[1] = oldind
-      				    ch[ord_ch[1]] = ind
-      				    incr=2
-      				    ind = 2
-      				    if (output)
-      				    	info(" ind ", ind, " incr ", incr, " iter ", iter)
-                            for j=0:snaps-1
-      				    	#for(int j=0;j<snaps;j++)
-      				    	    info(" j ", j, " ord_ch ", ord_ch[j], " ch ", ch[ord_ch[j]], " rep ", num_rep[ord_ch[j]])
+      				    online.ord_ch[1+1] = online.oldind
+      				    online.ch[online.ord_ch[1+1]+1] = online.ind
+      				    online.incr = 2
+      				    online.ind = 2
+      				    if (online.verbose)
+      				    	@info(" ind ", online.ind, " incr ", online.incr, " iter ", online.iter)
+                            for j=1:online.acp
+      				    	    @info(" j ", j, " ord_ch ", online.ord_ch[j], " ch ", online.ch[online.ord_ch[j]+1], " rep ", online.num_rep[online.ord_ch[j]+1])
                             end
                         end
                     end
       			    #Increase the number of takeshots and the corresponding checkpoint
-      			    numstore+=1
-      			    #checkpoint->number_of_writes[check]++
-                    return Action(store, check, -1, -1)
-      			    #return ACTION::takeshot
+      			    online.numstore+=1
+                    return Action(store, online.capo-1, -1, online.check)
                 end
-            end
-      		if (t == 0)
-      			if (output)
-                    info(" ind ", ind, " incr ",  incr, " iter ", iter, " offset ", offset)
-                end
-                if (iter == offset)
-      				offset=offset-1
-      				iter = 1
-      				check = ord_ch[snaps-1]
-      				ch[ord_ch[snaps-1]] = capo
-      				oldind = ord_ch[snaps-1]
-      				ind = ch[ord_ch[snaps-1]]
-      				if (output)
-                        info(" oldind " , oldind , " ind " , ind)
+        
+                if (online.t == 0)
+                    if (online.verbose)
+                        @info(" online.ind ", online.ind, " online.incr ",  online.incr, " iter ", online.iter, " offset ", online.offset)
                     end
-                    for k=snaps-1:-1:incr+1
-      				#for(int k=snaps-1;k>incr;k--)
-      					ord_ch[k]=ord_ch[k-1]
-      					ch[ord_ch[k]] = ch[ord_ch[k-1]]
-                    end
-      				ord_ch[incr] = oldind
-      				ch[ord_ch[incr]] = ind
-      				incr+=1
-      				ind=incr
-      				if (output)
-                        info(" ind ", ind, " incr ", incr, " iter ", iter)
-                        for j=0:snaps-1
-      					#for(int j=0;j<snaps;j++)
-                            info(" j ", j << " ord_ch ", ord_ch[j], " ch ", ch[ord_ch[j]], " rep ", num_rep[ord_ch[j]])
+                    if (online.iter == online.offset)
+                        online.offset=online.offset-1
+                        online.iter = 1
+                        online.check = online.ord_ch[online.acp-1+1]
+                        online.ch[online.ord_ch[online.acp-1+1]+1] = online.capo
+                        online.oldind = online.ord_ch[online.acp-1+1]
+                        online.ind = online.ch[online.ord_ch[online.acp-1+1]+1]
+                        if (online.verbose)
+                            @info(" oldind " , online.oldind , " ind " , online.ind)
+                        end
+                        for k=online.acp-1:-1:online.incr+1
+                            online.ord_ch[k+1]=online.ord_ch[k-1+1]
+                            online.ch[online.ord_ch[k+1]+1] = online.ch[online.ord_ch[k-1+1]+1]
+                        end
+                        online.ord_ch[online.incr+1] = online.oldind
+                        online.ch[online.ord_ch[online.incr+1]+1] = online.ind
+                        online.incr+=1
+                        online.ind=online.incr
+                        if (online.verbose)
+                            @info(" ind ", online.ind, " incr ", online.incr, " iter ", online.iter)
+                            for j=1:online.acp
+                                @info(" j ", j, " ord_ch ", online.ord_ch[j], " ch ", online.ch[online.ord_ch[j]+1], " rep ", online.num_rep[online.ord_ch[j]+1])
+                            end
+                        end
+                    else
+                        online.ch[online.ord_ch[online.ind+1]+1] = online.capo
+                        online.check = online.ord_ch[online.ind+1]
+                        online.iter+=1
+                        online.ind+=1
+                        if (online.verbose)
+                            @info(" xx ind ", online.ind, " incr ", online.incr, " iter ", online.iter)
                         end
                     end
-      			else
-      				ch[ord_ch[ind]] = capo
-      				check = ord_ch[ind]
-      				iter+=1
-      				ind+=1
-      				if (output)
-                        info(" xx ind ", ind, " incr ", incr, " iter ", iter)
-                    end
+                    #Increase the number of takeshots and the corresponding checkpoint
+                    online.numstore=online.numstore+1
+                    return Action(store, online.capo-1, -1, online.check)
                 end
-      			#Increase the number of takeshots and the corresponding checkpoint
-      			numstore=numstore+1
-      			#checkpoint->number_of_writes[check]++
-                return Action(store, check, -1, -1)
-      			#return ACTION::takeshot
-      		end
+
+            end
         end
     end
-    actionflag = done
-    return Action(done, capo, oldcapo_o, cpnum)
-    #return ACTION::terminate # This means that the end of Online_r2 Checkpointing for r=2 is reached and
+    # This means that the end of Online_r2 Checkpointing for r=2 is reached and
     #  another Online_r2 Checkpointing class must be started
-end
-
-
-function Revolve(
-    online::Online_r2,
-    checkpoints::Int,
-    fstore::Union{Function,Nothing} = nothing,
-    frestore::Union{Function,Nothing} = nothing;
-)
-    if !isa(anActionInstance, Nothing)
-        # same as default init above
-        anActionInstance.actionflag = 0
-        anActionInstance.iteration  = 0
-        anActionInstance.cpNum      = 0
-    end
-    cstart = online_r2.cstart
-    tail   = 1
-    cend            = online_r2.steps
-    acp             = online_r2.checkpoints
-    numfwd          = online_r2.numfwd
-    numinv          = online_r2.numinv
-    numstore        = online_r2.numstore
-    rwcp            = online_r2.rwcp
-    prevcend        = online_r2.prevcend
-    firstuturned    = online_r2.firstuturned #true
-    stepof = Vector{Int}(undef, acp+1)
-
-    revolve = Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
-
-    if verbose > 0
-        predfwdcnt = forwardcount(revolve)
-        if predfwdcnt == -1
-            error("Revolve: error returned by  revolve::forwardcount")
-        else
-            @info "prediction:"
-            @info " overhead forward steps : $predfwdcnt"
-            @info " overhead factor        : $(predfwdcnt/steps)"
-        end
-    end
-    return revolve
+    @info("Online_r2 is optimal over the range [0,(numcheckpoints+2)*(numcheckpoints+1)/2]. Online_r3 needs to be implemented")
+    return Action(error, online.capo, online.oldcapo, -1)
 end

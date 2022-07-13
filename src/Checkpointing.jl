@@ -1,6 +1,7 @@
 module Checkpointing
 
 using LinearAlgebra
+using DataStructures
 
 export mynorm
 
@@ -47,13 +48,14 @@ include("Schemes/Online_r2.jl")
 
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
+export Online_r2, update_revolve
 
-macro checkpoint(alg, adtool, loop)
+macro checkpoint(alg, adtool, forloop)
     ex = quote
         function tobedifferentiated(inputs)
             local F_H = similar(inputs)
             local F = inputs
-            $(loop.args[2])
+            $(forloop.args[2])
             outputs = F
             return outputs
         end
@@ -70,10 +72,10 @@ macro checkpoint(alg, adtool, loop)
                     $alg.fstore(F,F_Check,t,check)
                 elseif (next_action.actionflag == Checkpointing.forward)
                     for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(loop.args[2])
+                        $(forloop.args[2])
                     end
                 elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(loop.args[2])
+                    $(forloop.args[2])
                     F_final .= F
                     L .= [0, 1]
                     t = 1.0-h
@@ -108,7 +110,7 @@ macro checkpoint(alg, adtool, loop)
             for i = 1:$alg.acp
                 $alg.fstore(F,F_Check,t,i)
                 for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(loop.args[2])
+                    $(forloop.args[2])
                 end
             end
             F_final .= F
@@ -119,7 +121,7 @@ macro checkpoint(alg, adtool, loop)
                 F,t = $alg.frestore(F_Check,i)
                 for j= 1:$alg.period
                     $alg.fstore(F,F_Check_inner,t,j)
-                    $(loop.args[2])
+                    $(forloop.args[2])
                 end
                 for j= $alg.period:-1:1
                     F,t = $alg.frestore(F_Check_inner,j)
@@ -132,38 +134,85 @@ macro checkpoint(alg, adtool, loop)
             end
             F .= F_final
         elseif isa($alg, Online_r2)
-            next_action = next_action!($alg)
-            if (next_action.actionflag == Checkpointing.store)
-                check = check+1
-                storemap[next_action.iteration-1]=check
-                $alg.fstore(F,F_Check,t,check)
-            elseif (next_action.actionflag == Checkpointing.forward)
-                for j= next_action.startiteration:(next_action.iteration - 1)
-                    $(loop.args[2])
+            freeindices = Stack{Int32}()
+            storemapinv = Dict{Int32,Int32}()
+            storemap = Dict{Int32,Int32}()
+            check = 0
+            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
+            F_final = Array{Float64, 1}(undef, 2)
+            oldcapo=0
+            onlinesteps=0
+            while $(forloop.args[1])
+                next_action = next_action!($alg)
+                if (next_action.actionflag == Checkpointing.store)
+                    check=next_action.cpnum+1
+                    storemapinv[check]=next_action.iteration
+                    $alg.fstore(F,F_Check,t,check)
+                    println(storemapinv)
+                elseif (next_action.actionflag == Checkpointing.forward)
+                    for j= oldcapo:(next_action.iteration-1)
+                        if($(forloop.args[1]))
+                            $(forloop.args[2])
+                        end
+                        onlinesteps=onlinesteps+1
+                    end
+                    oldcapo=next_action.iteration
+                else
+                    @error("Unexpected action in online phase: ", next_action.actionflag)
                 end
-            elseif (next_action.actionflag == Checkpointing.firstuturn)
-                error("Unexpected")
-            elseif (next_action.actionflag == Checkpointing.uturn)
-                error("Unexpected")
-            elseif (next_action.actionflag == Checkpointing.restore)
-                error("Unexpected")
-            elseif next_action.actionflag == Checkpointing.done
-                info("Done online phase")
-                offline_revolve=$alg.offline_revolve
-
-                break
             end
-        end
-        F .= F_final
+            for (key, value) in storemapinv
+                storemap[value]=key
+            end
+
+            #Switch to offline revolve now.
+            update_revolve($alg, onlinesteps+1)
+            while true
+                next_action = next_action!($alg.revolve)
+                if (next_action.actionflag == Checkpointing.store)
+                    check=pop!(freeindices)
+                    storemap[next_action.iteration-1]=check
+                    $alg.revolve.fstore(F,F_Check,t,check)
+                elseif (next_action.actionflag == Checkpointing.forward)
+                    for j= next_action.startiteration:(next_action.iteration-1)
+                        $(forloop.args[2])
+                    end
+                elseif (next_action.actionflag == Checkpointing.firstuturn)
+                    $(forloop.args[2])
+                    F_final .= F
+                    L .= [0, 1]
+                    t = 1.0-h
+                    L_H .= L
+                    L = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)[2,:]
+                elseif (next_action.actionflag == Checkpointing.uturn)
+                    L_H .= L
+                    F_H = F
+                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
+                    L =  transpose(res)*L
+                    t = t - h
+                    if haskey(storemap,next_action.iteration-1-1)
+                        push!(freeindices, storemap[next_action.iteration-1-1])
+                        delete!(storemap,next_action.iteration-1-1)
+                    end
+                elseif (next_action.actionflag == Checkpointing.restore)
+                    F, t = $alg.revolve.frestore(F_Check,storemap[next_action.iteration-1])
+                elseif next_action.actionflag == Checkpointing.done
+                    if haskey(storemap,next_action.iteration-1-1)
+                        delete!(storemap,next_action.iteration-1-1)
+                    end
+                    break
+                end
+            end
+            F .= F_final
         end
     end
     esc(ex)
 end
 
-macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
+macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
     ex = quote
         function tobedifferentiated($model)
-            $(loop.args[2])
+            $(forloop.args[2])
             return nothing
         end
         if isa($alg, Revolve)
@@ -180,10 +229,10 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
                     model_check[check] = deepcopy($model)
                 elseif (next_action.actionflag == Checkpointing.forward)
                     for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(loop.args[2])
+                        $(forloop.args[2])
                     end
                 elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(loop.args[2])
+                    $(forloop.args[2])
                     model_final = deepcopy($model)
                     Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
                 elseif (next_action.actionflag == Checkpointing.uturn)
@@ -212,7 +261,7 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
             for i = 1:$alg.acp
                 model_check_outer[i] = deepcopy($model)
                 for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(loop.args[2])
+                    $(forloop.args[2])
                 end
             end
             model_final = deepcopy($model)
@@ -220,7 +269,7 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
                 $model = deepcopy(model_check_outer[i])
                 for j= 1:$alg.period
                     model_check_inner[j] = deepcopy($model)
-                    $(loop.args[2])
+                    $(forloop.args[2])
                 end
                 for j= $alg.period:-1:1
                     $model = deepcopy(model_check_inner[j])
@@ -229,37 +278,7 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, loop)
             end
             $model = deepcopy(model_final)
         end
-        #=
-        elseif isa($alg, Online_r2)
-            storemap = Dict{Int32,Int32}()
-            check = 0
-            MT = typeof($model)
-            model_check = Array{MT}(undef, $alg.acp)
-            model_final = deepcopy($model)
-            while true
-                next_action = next_action!($alg)
-                if (next_action.actionflag == Checkpointing.store)
-                    check = check+1
-                    storemap[next_action.iteration-1]=check
-                    model_check[check] = deepcopy($model)
-                elseif (next_action.actionflag == Checkpointing.forward)
-                    for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(loop.args[2])
-                    end
-                elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    error("Unexpected firstuturn")
-                elseif (next_action.actionflag == Checkpointing.uturn)
-                    error("Unexpected uturn")
-                elseif (next_action.actionflag == Checkpointing.restore)
-                    error("Unexpected restore")
-                elseif next_action.actionflag == Checkpointing.done
-                    info("Done with online phase")
-                    break
-                end
-            end
-            $model = deepcopy(model_final)
-        end
-        =#
+    end
     esc(ex)
 end
 
