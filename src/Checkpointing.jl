@@ -278,7 +278,41 @@ macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
             end
             $model = deepcopy(model_final)
         end
+<<<<<<< HEAD
     end
+=======
+        #=
+        elseif isa($alg, Online_r2)
+            storemap = Dict{Int32,Int32}()
+            check = 0
+            MT = typeof($model)
+            model_check = Array{MT}(undef, $alg.acp)
+            model_final = deepcopy($model)
+            while true
+                next_action = next_action!($alg)
+                if (next_action.actionflag == Checkpointing.store)
+                    check = check+1
+                    storemap[next_action.iteration-1]=check
+                    model_check[check] = deepcopy($model)
+                elseif (next_action.actionflag == Checkpointing.forward)
+                    for j= next_action.startiteration:(next_action.iteration - 1)
+                        $(loop.args[2])
+                    end
+                elseif (next_action.actionflag == Checkpointing.firstuturn)
+                    error("Unexpected firstuturn")
+                elseif (next_action.actionflag == Checkpointing.uturn)
+                    error("Unexpected uturn")
+                elseif (next_action.actionflag == Checkpointing.restore)
+                    error("Unexpected restore")
+                elseif next_action.actionflag == Checkpointing.done
+                    info("Done with online phase")
+                    break
+                end
+            end
+            $model = deepcopy(model_final)
+        =#
+        end
+>>>>>>> 6665f0681836387dbce13fb8e7fd91209be8cd0b
     esc(ex)
 end
 
