@@ -1,8 +1,12 @@
-# This is a Julia adaptation of the functionality of Revolve; see Alg. 799 published by Griewank et al.
-# A minor extension is the  optional `bundle` parameter that allows to treat as many loop
-# iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
+"""
+    Revolve
 
-mutable struct Revolve <: Scheme
+This is a Julia adaptation of the functionality of Revolve; see Alg. 799 published by Griewank et al.
+A minor extension is the  optional `bundle` parameter that allows to treat as many loop
+iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
+
+"""
+mutable struct Revolve{MT} <: Scheme where {MT}
     steps::Int
     bundle::Int
     tail::Int
@@ -19,17 +23,19 @@ mutable struct Revolve <: Scheme
     verbose::Int
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
+    storage::AbstractStorage
 end
 
-function Revolve(
+function Revolve{MT}(
     steps::Int,
     checkpoints::Int,
     fstore::Union{Function,Nothing} = nothing,
     frestore::Union{Function,Nothing} = nothing;
+    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
     anActionInstance::Union{Nothing,Action} = nothing,
     bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0
-)
+) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
@@ -65,7 +71,11 @@ function Revolve(
     firstuturned    = false
     stepof = Vector{Int}(undef, acp+1)
 
-    revolve = Revolve(steps, bundle, tail, acp, cstart, cend, numfwd, numinv, numstore, rwcp, prevcend, firstuturned, stepof, verbose, fstore, frestore)
+    revolve = Revolve{MT}(
+        steps, bundle, tail, acp, cstart, cend, numfwd,
+        numinv, numstore, rwcp, prevcend, firstuturned,
+        stepof, verbose, fstore, frestore, storage
+    )
 
     if verbose > 0
         predfwdcnt = forwardcount(revolve)
@@ -352,4 +362,47 @@ function forwardcount(revolve::Revolve)
         end
     end
     return ret
+end
+
+function checkpoint_struct(body::Function,
+        alg::Revolve,
+        model_input::MT,
+        shadowmodel::MT
+    ) where {MT}
+    model = deepcopy(model_input)
+    storemap = Dict{Int32,Int32}()
+    check = 0
+    model_check = alg.storage
+    model_final = []
+    while true
+        next_action = next_action!(alg)
+        if (next_action.actionflag == Checkpointing.store)
+            check = check+1
+            storemap[next_action.iteration-1]=check
+            model_check[check] = deepcopy(model)
+        elseif (next_action.actionflag == Checkpointing.forward)
+            for j= next_action.startiteration:(next_action.iteration - 1)
+                body(model)
+            end
+        elseif (next_action.actionflag == Checkpointing.firstuturn)
+            body(model)
+            model_final =  deepcopy(model)
+            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+        elseif (next_action.actionflag == Checkpointing.uturn)
+            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            if haskey(storemap,next_action.iteration-1-1)
+                delete!(storemap,next_action.iteration-1-1)
+                check=check-1
+            end
+        elseif (next_action.actionflag == Checkpointing.restore)
+            model = deepcopy(model_check[storemap[next_action.iteration-1]])
+        elseif next_action.actionflag == Checkpointing.done
+            if haskey(storemap,next_action.iteration-1-1)
+                delete!(storemap,next_action.iteration-1-1)
+                check=check-1
+            end
+            break
+        end
+    end
+    return model_final
 end

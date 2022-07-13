@@ -1,21 +1,32 @@
 module Checkpointing
 
+using ChainRulesCore
 using LinearAlgebra
 using DataStructures
+using Enzyme
+using Serialization
+using HDF5
 
-export mynorm
-
-abstract type Scheme end
 """
-    Action
+    Scheme
 
-    none: no action
-    store: store a checkpoint now equivalent to TAKESHOT in Alg. 79
-    restore: restore a checkpoint now equivalent to RESTORE in Alg. 79
-    forward: execute iteration(s) forward equivalent to ADVANCE in Alg. 79
-    firstuturn: tape iteration(s); optionally leave to return later;  and (upon return) do the adjoint(s) equivalent to FIRSTTURN in Alg. 799
-    uturn: tape iteration(s) and do the adjoint(s) equivalent to YOUTURN in Alg. 79
-    done: we are done with adjoining the loop equivalent to the `terminate` enum value in Alg. 79
+Abstract type from which all checkpointing schemes are derived.
+
+"""
+abstract type Scheme end
+
+"""
+    ActionFlag
+
+Each checkpointing algorithm currently uses the same ActionFlag type for setting the next action in the checkpointing scheme
+none: no action
+store: store a checkpoint now equivalent to TAKESHOT in Alg. 79
+restore: restore a checkpoint now equivalent to RESTORE in Alg. 79
+forward: execute iteration(s) forward equivalent to ADVANCE in Alg. 79
+firstuturn: tape iteration(s); optionally leave to return later;  and (upon return) do the adjoint(s) equivalent to FIRSTTURN in Alg. 799
+uturn: tape iteration(s) and do the adjoint(s) equivalent to YOUTURN in Alg. 79
+done: we are done with adjoining the loop equivalent to the `terminate` enum value in Alg. 79
+
 """
 @enum ActionFlag begin
     none
@@ -27,6 +38,16 @@ abstract type Scheme end
 	done
 end
 
+"""
+    Action
+
+Stores the state of the checkpointing scheme after an action is taken.
+    * `actionflag` is the next action
+    * `iteration` is number of iterations for move forward
+    * `startiteration` is the loop step to start from
+    * `cpnum` is the checkpoint index number
+
+"""
 struct Action
 	actionflag::ActionFlag
 	iteration::Int
@@ -40,8 +61,29 @@ function jacobian(tobedifferentiated, F_H, ::AbstractADTool)
     error("No AD tool interface implemented")
 end
 
-export AbstractADTool, jacobian, @checkpoint, @checkpoint_mutable
+export Scheme, AbstractADTool, jacobian, @checkpoint, @checkpoint_struct, checkpoint_struct
 
+function serialize(x)
+    s = IOBuffer()
+    Serialization.serialize(s, x)
+    take!(s)
+end
+
+function deserialize(x)
+    s = IOBuffer(x)
+    Serialization.deserialize(s)
+end
+
+export serialize, deserialize
+
+abstract type AbstractStorage end
+
+include("Storage/ArrayStorage.jl")
+include("Storage/HDF5Storage.jl")
+
+export AbstractStorage, ArrayStorage, HDF5Storage
+
+include("deprecated.jl")
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 include("Schemes/Online_r2.jl")
@@ -50,235 +92,113 @@ export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
 export Online_r2, update_revolve
 
-macro checkpoint(alg, adtool, forloop)
-    ex = quote
-        function tobedifferentiated(inputs)
-            local F_H = similar(inputs)
-            local F = inputs
-            $(forloop.args[2])
-            outputs = F
-            return outputs
-        end
-        if isa($alg, Revolve)
-            storemap = Dict{Int32,Int32}()
-            check = 0
-            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-            F_final = Array{Float64, 1}(undef, 2)
-            while true
-                next_action = next_action!($alg)
-                if (next_action.actionflag == Checkpointing.store)
-                    check = check+1
-                    storemap[next_action.iteration-1]=check
-                    $alg.fstore(F,F_Check,t,check)
-                elseif (next_action.actionflag == Checkpointing.forward)
-                    for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(forloop.args[2])
-                    end
-                elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(forloop.args[2])
-                    F_final .= F
-                    L .= [0, 1]
-                    t = 1.0-h
-                    L_H .= L
-                    L = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)[2,:]
-                elseif (next_action.actionflag == Checkpointing.uturn)
-                    L_H .= L
-                    F_H = F
-                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
-                    L =  transpose(res)*L
-                    t = t - h
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                        check=check-1
-                    end
-                elseif (next_action.actionflag == Checkpointing.restore)
-                    F, t = $alg.frestore(F_Check,storemap[next_action.iteration-1])
-                elseif next_action.actionflag == Checkpointing.done
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                        check=check-1
-                    end
-                    break
-                end
-            end
-            F .= F_final
-        elseif isa($alg, Periodic)
-            check = 0
-            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-            F_final = Array{Float64, 1}(undef, 2)
-            F_Check_inner = Array{Any, 2}(undef, 3, $alg.period)
-            for i = 1:$alg.acp
-                $alg.fstore(F,F_Check,t,i)
-                for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(forloop.args[2])
-                end
-            end
-            F_final .= F
-            L .= [0, 1]
-            t = 1.0-h
-            L_H .= L
-            for i = $alg.acp:-1:1
-                F,t = $alg.frestore(F_Check,i)
-                for j= 1:$alg.period
-                    $alg.fstore(F,F_Check_inner,t,j)
-                    $(forloop.args[2])
-                end
-                for j= $alg.period:-1:1
-                    F,t = $alg.frestore(F_Check_inner,j)
-                    L_H .= L
-                    F_H .= F
-                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
-                    L =  transpose(res)*L
-                    t = t - h
-                end
-            end
-            F .= F_final
-        elseif isa($alg, Online_r2)
-            freeindices = Stack{Int32}()
-            storemapinv = Dict{Int32,Int32}()
-            storemap = Dict{Int32,Int32}()
-            check = 0
-            F_Check = Array{Any, 2}(undef, 3, $alg.acp)
-            F_final = Array{Float64, 1}(undef, 2)
-            oldcapo=0
-            onlinesteps=0
-            while $(forloop.args[1])
-                next_action = next_action!($alg)
-                if (next_action.actionflag == Checkpointing.store)
-                    check=next_action.cpnum+1
-                    storemapinv[check]=next_action.iteration
-                    $alg.fstore(F,F_Check,t,check)
-                elseif (next_action.actionflag == Checkpointing.forward)
-                    for j= oldcapo:(next_action.iteration-1)
-                        if($(forloop.args[1]))
-                            $(forloop.args[2])
-                        end
-                        onlinesteps=onlinesteps+1
-                    end
-                    oldcapo=next_action.iteration
-                else
-                    @error("Unexpected action in online phase: ", next_action.actionflag)
-                end
-            end
-            for (key, value) in storemapinv
-                storemap[value]=key
-            end
+@generated function copyto!(dest::MT, src::MT) where {MT}
+    assignments = [
+        :( dest.$name = src.$name ) for name in fieldnames(MT)
+    ]
+    quote $(assignments...) end
+end
 
-            #Switch to offline revolve now.
-            update_revolve($alg, onlinesteps+1)
-            while true
-                next_action = next_action!($alg.revolve)
-                if (next_action.actionflag == Checkpointing.store)
-                    check=pop!(freeindices)
-                    storemap[next_action.iteration-1]=check
-                    $alg.revolve.fstore(F,F_Check,t,check)
-                elseif (next_action.actionflag == Checkpointing.forward)
-                    for j= next_action.startiteration:(next_action.iteration-1)
-                        $(forloop.args[2])
-                    end
-                elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(forloop.args[2])
-                    F_final .= F
-                    L .= [0, 1]
-                    t = 1.0-h
-                    L_H .= L
-                    L = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)[2,:]
-                elseif (next_action.actionflag == Checkpointing.uturn)
-                    L_H .= L
-                    F_H = F
-                    res = Checkpointing.jacobian(tobedifferentiated, F_H, $adtool)
-                    L =  transpose(res)*L
-                    t = t - h
-                    if haskey(storemap,next_action.iteration-1-1)
-                        push!(freeindices, storemap[next_action.iteration-1-1])
-                        delete!(storemap,next_action.iteration-1-1)
-                    end
-                elseif (next_action.actionflag == Checkpointing.restore)
-                    F, t = $alg.revolve.frestore(F_Check,storemap[next_action.iteration-1])
-                elseif next_action.actionflag == Checkpointing.done
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                    end
-                    break
-                end
-            end
-            F .= F_final
+function copyto!(dest::MT, src::TT) where {MT,TT}
+    for name in (fieldnames(MT))
+        if !isa(src[name], ChainRulesCore.ZeroTangent)
+            setfield!(dest, name, convert(typeof(getfield(dest, name)), src[name]))
+        end
+    end
+end
+
+to_named_tuple(p) = (; (v=>getfield(p, v) for v in fieldnames(typeof(p)))...)
+
+function create_tangent(shadowmodel::MT) where {MT}
+    shadowtuple = to_named_tuple(shadowmodel)
+    return Tangent{MT,typeof(shadowtuple)}(shadowtuple)
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(Checkpointing.checkpoint_struct),
+    body::Function,
+    alg::Scheme,
+    model::MT,
+    shadowmodel::MT,
+) where {MT}
+    model_input = deepcopy(model)
+    # shadowmodel = deepcopy(model)
+    for i in 1:alg.steps
+        body(model)
+    end
+    function checkpoint_struct_pullback(dmodel)
+        copyto!(shadowmodel, dmodel)
+        model = checkpoint_struct(body, alg, model_input, shadowmodel)
+        dshadowmodel = create_tangent(shadowmodel)
+        return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent()
+    end
+    return model, checkpoint_struct_pullback
+end
+
+"""
+    @checkpoint_struct(
+        alg,
+        model,
+        loop,
+    )
+
+This macro is supposed to be only used in conjunction with ChainRules. It does
+not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
+`loop` expression. `model` is the primal struct. `shadowmodel` contains the
+adjoints and is created here.  It is supposed to be initialized by ChainRules.
+
+"""
+macro checkpoint_struct(alg, model, loop)
+    ex = quote
+        shadowmodel = deepcopy($model)
+        $model = checkpoint_struct($alg, $model, shadowmodel) do $model
+            $(loop.args[2])
         end
     end
     esc(ex)
 end
 
-macro checkpoint_mutable(alg, adtool, model, shadowmodel, forloop)
+"""
+    @checkpoint_struct(
+        alg,
+        model,
+        shadowmodel,
+        loop,
+    )
+
+Apply the checkpointing scheme `alg` on the loop `loop` expression. `model` is
+the primal struct and `shadowmodel` the adjoint struct where the adjoints
+are seeded and retrieved.
+
+"""
+macro checkpoint_struct(alg, model, shadowmodel, loop)
     ex = quote
-        function tobedifferentiated($model)
-            $(forloop.args[2])
-            return nothing
-        end
-        if isa($alg, Revolve)
-            storemap = Dict{Int32,Int32}()
-            check = 0
-            MT = typeof($model)
-            model_check = Array{MT}(undef, $alg.acp)
-            model_final = deepcopy($model)
-            while true
-                next_action = next_action!($alg)
-                if (next_action.actionflag == Checkpointing.store)
-                    check = check+1
-                    storemap[next_action.iteration-1]=check
-                    model_check[check] = deepcopy($model)
-                elseif (next_action.actionflag == Checkpointing.forward)
-                    for j= next_action.startiteration:(next_action.iteration - 1)
-                        $(forloop.args[2])
-                    end
-                elseif (next_action.actionflag == Checkpointing.firstuturn)
-                    $(forloop.args[2])
-                    model_final = deepcopy($model)
-                    Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
-                elseif (next_action.actionflag == Checkpointing.uturn)
-                    Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                        check=check-1
-                    end
-                elseif (next_action.actionflag == Checkpointing.restore)
-                    $model = deepcopy(model_check[storemap[next_action.iteration-1]])
-                elseif next_action.actionflag == Checkpointing.done
-                    if haskey(storemap,next_action.iteration-1-1)
-                        delete!(storemap,next_action.iteration-1-1)
-                        check=check-1
-                    end
-                    break
-                end
-            end
-            $model = deepcopy(model_final)
-        elseif isa($alg, Periodic)
-            MT = typeof($model)
-            model_check_outer = Array{MT}(undef, $alg.acp)
-            model_check_inner = Array{MT}(undef, $alg.period)
-            model_final = deepcopy($model)
-            check = 0
-            for i = 1:$alg.acp
-                model_check_outer[i] = deepcopy($model)
-                for j= (i-1)*$alg.period: (i)*$alg.period-1
-                    $(forloop.args[2])
-                end
-            end
-            model_final = deepcopy($model)
-            for i = $alg.acp:-1:1
-                $model = deepcopy(model_check_outer[i])
-                for j= 1:$alg.period
-                    model_check_inner[j] = deepcopy($model)
-                    $(forloop.args[2])
-                end
-                for j= $alg.period:-1:1
-                    $model = deepcopy(model_check_inner[j])
-                    Enzyme.autodiff(tobedifferentiated, Duplicated($model,$shadowmodel))
-                end
-            end
-            $model = deepcopy(model_final)
+        $model = checkpoint_struct($alg, $model, $shadowmodel) do $model
+            $(loop.args[2])
         end
     end
     esc(ex)
+end
+
+"""
+    checkpoint_struct(
+        body::Function
+        alg::Scheme,
+        model::MT,
+        shadowmodel::MT,
+    ) where {MT}
+
+Default method for the function `checkpoint_struct` if the function is not specialized for an unknown scheme `Scheme`.
+`body` is the loop body as generated by the macro `@checkpoint_struct` and `MT` is the checkpointed struct.
+
+"""
+function checkpoint_struct(
+        body::Function,
+        alg::Scheme,
+        model_input::MT,
+        shadowmodel::MT
+    ) where {MT}
+    error("No checkpointing scheme implemented for algorithm $Scheme.")
 end
 
 end

@@ -1,14 +1,14 @@
-# This provides the functionality of online checkpointing. 
+# This provides the functionality of online checkpointing.
 # It is based on an implementation of the Online_r2 algorithm from:
 #   Philipp Stumm and Andrea Walther. 2010. New Algorithms for
-#   Optimal Online Checkpointing. SIAM J. Sci. Comput. 32, 2 
+#   Optimal Online Checkpointing. SIAM J. Sci. Comput. 32, 2
 #   (March 2010), 836–854. https://doi.org/10.1137/080742439
-# It is, furthermore, a Julia translation of the original C++ 
+# It is, furthermore, a Julia translation of the original C++
 # code distributed by the PyRevolve project:
 #   https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
 # TODO: Extend Online_r2 to Online_r3
 
-mutable struct Online_r2 <: Scheme
+mutable struct Online_r2{MT} <: Scheme where {MT}
 	check::Int
 	capo::Int
     acp::Int
@@ -31,13 +31,13 @@ mutable struct Online_r2 <: Scheme
     revolve::Revolve
 end
 
-function Online_r2(
+function Online_r2{MT}(
     checkpoints::Int,
     fstore::Union{Function,Nothing} = nothing,
     frestore::Union{Function,Nothing} = nothing,
     anActionInstance::Union{Nothing,Action} = nothing,
     verbose::Int = 0
-)
+) where {MT}
     if !isa(anActionInstance, Nothing)
         anActionInstance.actionflag = 0
         anActionInstance.iteration  = 0
@@ -56,7 +56,7 @@ function Online_r2(
     oldind = -1
     ind = -1
     iter = -1
-    incr = -1 
+    incr = -1
     offset= -1
     t=-1
     ch = Vector{Int}(undef, acp)
@@ -68,15 +68,15 @@ function Online_r2(
         num_rep[i] = -1
     end
     verbose = false
-    revolve = Revolve(typemax(Int64), acp, fstore, frestore; verbose=3)
-    online_r2 = Online_r2(check, capo, acp, numfwd, numcmd, numstore, 
-                            oldcapo, ind, oldind, iter, incr, offset, t, 
+    revolve = Revolve{MT}(typemax(Int64), acp, fstore, frestore; verbose=3)
+    online_r2 = Online_r2{MT}(check, capo, acp, numfwd, numcmd, numstore,
+                            oldcapo, ind, oldind, iter, incr, offset, t,
                             verbose, fstore, frestore, ch, ord_ch, num_rep, revolve)
     return online_r2
 end
 
-function update_revolve(online::Online_r2, steps)
-    online.revolve = Revolve(steps, online.acp, online.fstore, online.frestore)
+function update_revolve(online::Online_r2{MT}, steps) where {MT}
+    online.revolve = Revolve{MT}(steps, online.acp, online.fstore, online.frestore)
     online.revolve.rwcp = online.revolve.acp-1
     online.revolve.steps = steps
     online.revolve.acp = online.acp
@@ -100,14 +100,14 @@ function update_revolve(online::Online_r2, steps)
     for i=1:online.acp
         for j=1:online.acp
             if (num_ch[j] == i)
-                online.ord_ch[i]=j; 
+                online.ord_ch[i]=j;
             end
         end
     end
     for j=1:online.acp
         online.revolve.stepof[j] = online.ch[online.ord_ch[j]]
     end
-    online.revolve.stepof[online.acp+1]=0   
+    online.revolve.stepof[online.acp+1]=0
 end
 
 function next_action!(online::Online_r2)::Action
@@ -115,12 +115,12 @@ function next_action!(online::Online_r2)::Action
     actionflag     = none
     if online.verbose
         if(online.check !=-1)
-            @info(online.check+1,  online.ch[online.check+1],  online.capo) 
+            @info(online.check+1,  online.ch[online.check+1],  online.capo)
             for i in 1:online.acp
                 println("online.ch[",i,"] =", online.ch[i])
             end
         else
-            @info(online.check, online.capo) 
+            @info(online.check, online.capo)
             for i in 1:online.acp
                 println("online.ch[",i,"] =", online.ch[i])
             end
@@ -131,12 +131,12 @@ function next_action!(online::Online_r2)::Action
     cond2 = false
     if online.check != -1
       cond2 = online.ch[online.check+1] != online.capo
-    end 
+    end
     online.oldcapo = online.capo
     if ((online.check == -1) || ( cond2 && (online.capo <= online.acp-1)))
     #condition for takeshot for r=1
     #   (If no checkpoint has been taken before OR
-    #    If a store has not just occurred AND the iteration count is 
+    #    If a store has not just occurred AND the iteration count is
     #    less than the total number of checkpoints)
         if online.verbose
             @info("condition for takeshot for r=1")
@@ -155,7 +155,7 @@ function next_action!(online::Online_r2)::Action
             online.iter = 1
             online.incr = 1
             online.oldind = 1
-            for i in 1:online.acp      
+            for i in 1:online.acp
       	        online.num_rep[i] = 1
       	        online.ord_ch[i] = i-1
             end
@@ -163,7 +163,7 @@ function next_action!(online::Online_r2)::Action
         end
         if (online.capo == online.acp-1)
             online.ind = 2
-        end    
+        end
         # Increase the number of takeshots and the corresponding checkpoint
         online.numstore+=1
         return Action(store, online.capo-1, -1, online.check)
@@ -181,7 +181,7 @@ function next_action!(online::Online_r2)::Action
         if (online.ch[online.check+1] == online.capo)
             # condition for advance for r=2
             # (checkpoint has just occurred)
-            if online.verbose    
+            if online.verbose
                 @info("Online_r2-condition for advance for r=2 online.acp=", online.acp)
             end
             if (online.acp == 1)
@@ -192,7 +192,7 @@ function next_action!(online::Online_r2)::Action
                 online.capo = online.ch[1+1]+online.incr
       		    online.numfwd+=1
                 return Action(forward, online.capo, online.oldcapo, -1)
-            elseif (online.acp == 3) 
+            elseif (online.acp == 3)
                 online.numfwd+=online.incr
       		    if (online.iter == 0)
       			    online.capo = online.ch[online.oldind+1]
@@ -248,7 +248,7 @@ function next_action!(online::Online_r2)::Action
       		    #Increase the number of takeshots and the corresponding checkpoint
       		    online.numstore+=1
                 return Action(store, online.capo-1, -1, 1+1)
-            elseif (online.acp == 3) 
+            elseif (online.acp == 3)
                 online.ch[online.ind+1] = online.capo
       		    online.check = online.ind
                 if (online.verbose)
@@ -265,7 +265,7 @@ function next_action!(online::Online_r2)::Action
       		    #Increase the number of takeshots and the corresponding checkpoint
       		    online.numstore+=1
                 return Action(store, online.capo-1, -1, online.check)
-            else 
+            else
                 if (online.verbose)
                     @info(" online.capo ", online.capo, " online.acp ", online.acp)
                 end
@@ -297,7 +297,7 @@ function next_action!(online::Online_r2)::Action
       			    online.numstore+=1
                     return Action(store, online.capo-1, -1, online.check)
                 end
-        
+
                 if (online.t == 0)
                     if (online.verbose)
                         @info(" online.ind ", online.ind, " online.incr ",  online.incr, " iter ", online.iter, " offset ", online.offset)
