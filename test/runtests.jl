@@ -1,6 +1,7 @@
 using Test
 using Checkpointing
 using LinearAlgebra
+using DataStructures
 # All tested AD tools
 using ForwardDiff, Enzyme, ReverseDiff, Zygote
 # Include all the AD tool interfaces through `jacobian()`
