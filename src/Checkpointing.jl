@@ -148,7 +148,6 @@ macro checkpoint(alg, adtool, forloop)
                     check=next_action.cpnum+1
                     storemapinv[check]=next_action.iteration
                     $alg.fstore(F,F_Check,t,check)
-                    println(storemapinv)
                 elseif (next_action.actionflag == Checkpointing.forward)
                     for j= oldcapo:(next_action.iteration-1)
                         if($(forloop.args[1]))
