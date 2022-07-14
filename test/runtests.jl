@@ -1,6 +1,7 @@
 using Test
 using Checkpointing
 using LinearAlgebra
+using DataStructures
 # All tested AD tools
 using ForwardDiff, ReverseDiff, Zygote, Enzyme
 # Include all the AD tool interfaces through `jacobian()`
@@ -29,9 +30,9 @@ include("../examples/adtools.jl")
         include("jacobian.jl")
     end
     @testset "Test optcontrol" begin
-        include("../examples/deprecated/optcontrol.jl")
-        @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
+        @testset "AD Tool $adtool" for adtool in [EnzymeADTool()]#, ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
             @testset "Testing Revolve..." begin
+                include("../examples/deprecated/optcontrol.jl")
                 # Enzyme segfaults if the garbage collector is enabled in this immutable code
                 if isa(adtool, EnzymeADTool)
                     GC.gc()
@@ -61,6 +62,7 @@ include("../examples/adtools.jl")
 
 
             @testset "Testing Periodic..." begin
+                include("../examples/deprecated/optcontrol.jl")
                 global steps = 100
                 global snaps = 4
                 global info = 1
@@ -79,6 +81,35 @@ include("../examples/adtools.jl")
                 end
                 periodic = Periodic{Nothing}(steps, snaps, store, restore; verbose=info)
                 F_opt, F_final, L_opt, L = optcontrol(periodic, steps, adtool)
+                @test isapprox(F_opt, F_final, rtol=1e-4)
+                @test isapprox(L_opt, L, rtol=1e-4)
+            end
+
+            @testset "Testing Online_r2..." begin
+                include("../examples/optcontrolwhile.jl")
+                # Enzyme segfaults if the garbage collector is enabled
+                if isa(adtool, EnzymeADTool)
+                    GC.gc()
+                    GC.enable(false)
+                end
+                global steps = 100
+                global snaps = 20
+                global info = 3
+
+                function store(F_H, F_C,t, i)
+                    F_C[1,i] = F_H[1]
+                    F_C[2,i] = F_H[2]
+                    F_C[3,i] = t
+                    return
+                end
+
+                function restore(F_C, i)
+                    F_H = [F_C[1,i], F_C[2,i]]
+                    t = F_C[3,i]
+                    return F_H, t
+                end
+                online = Online_r2{Nothing}(snaps, store, restore)
+                F_opt, F_final, L_opt, L = optcontrolwhile(online, steps, adtool)
                 @test isapprox(F_opt, F_final, rtol=1e-4)
                 @test isapprox(L_opt, L, rtol=1e-4)
             end

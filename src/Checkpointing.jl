@@ -2,6 +2,7 @@ module Checkpointing
 
 using ChainRulesCore
 using LinearAlgebra
+using DataStructures
 using Enzyme
 using Serialization
 using HDF5
@@ -89,6 +90,7 @@ include("Schemes/Online_r2.jl")
 
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
+export Online_r2, update_revolve
 
 @generated function copyto!(dest::MT, src::MT) where {MT}
     assignments = [
