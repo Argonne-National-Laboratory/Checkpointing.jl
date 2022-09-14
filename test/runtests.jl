@@ -65,7 +65,7 @@ include("../examples/adtools.jl")
                 include("../examples/deprecated/optcontrol.jl")
                 global steps = 100
                 global snaps = 4
-                global info = 1
+                global info = 0
 
                 function store(F_H, F_C,t, i)
                     F_C[1,i] = F_H[1]
@@ -88,13 +88,9 @@ include("../examples/adtools.jl")
             @testset "Testing Online_r2..." begin
                 include("../examples/optcontrolwhile.jl")
                 # Enzyme segfaults if the garbage collector is enabled
-                if isa(adtool, EnzymeADTool)
-                    GC.gc()
-                    GC.enable(false)
-                end
                 global steps = 100
                 global snaps = 20
-                global info = 3
+                global info = 0
 
                 function store(F_H, F_C,t, i)
                     F_C[1,i] = F_H[1]
@@ -148,7 +144,7 @@ include("../examples/adtools.jl")
             info = 0
 
             revolve = Revolve{Heat}(steps, snaps; verbose=info)
-            T, dT = heat(revolve, steps)
+            T, dT = heat_for(revolve, steps)
 
             @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
@@ -160,7 +156,18 @@ include("../examples/adtools.jl")
             info = 0
 
             periodic = Periodic{Heat}(steps, snaps; verbose=info)
-            T, dT = heat(periodic, steps)
+            T, dT = heat_for(periodic, steps)
+
+            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+        end
+
+        @testset "Testing Online_r2..." begin
+            steps = 500
+            snaps = 100
+            info = 0
+            online = Online_r2{Heat}(snaps; verbose=info)
+            T, dT = heat_while(online, steps)
 
             @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
@@ -174,7 +181,7 @@ include("../examples/adtools.jl")
             info = 0
 
             revolve = Revolve{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
-            T, dT = heat(revolve, steps)
+            T, dT = heat_for(revolve, steps)
 
             @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
@@ -186,7 +193,18 @@ include("../examples/adtools.jl")
             info = 0
 
             periodic = Periodic{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
-            T, dT = heat(periodic, steps)
+            T, dT = heat_for(periodic, steps)
+
+            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+        end
+
+        @testset "Testing Online_r2..." begin
+            steps = 500
+            snaps = 100
+            info = 0
+            online = Online_r2{Heat}(snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+            T, dT = heat_while(online, steps)
 
             @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)

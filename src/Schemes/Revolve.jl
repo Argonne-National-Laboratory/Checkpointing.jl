@@ -364,11 +364,13 @@ function forwardcount(revolve::Revolve)
     return ret
 end
 
-function checkpoint_struct(body::Function,
-        alg::Revolve,
-        model_input::MT,
-        shadowmodel::MT
-    ) where {MT}
+function checkpoint_struct_for(
+    body::Function,
+    alg::Revolve,
+    model_input::MT,
+    shadowmodel::MT,
+    range
+) where {MT}
     model = deepcopy(model_input)
     storemap = Dict{Int32,Int32}()
     check = 0
