@@ -22,7 +22,7 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat, chkpscheme::Scheme)
+function sumheat_for(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     # AD: Create shadow copy for derivatives
     @checkpoint_struct chkpscheme heat for i in 1:tsteps
         heat.Tlast .= heat.Tnext
@@ -31,14 +31,25 @@ function sumheat(heat::Heat, chkpscheme::Scheme)
     return reduce(+, heat.Tnext)
 end
 
-function heat(scheme::Scheme, tsteps::Int)
+function sumheat_while(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+    # AD: Create shadow copy for derivatives
+    heat.tsteps = 1
+    @checkpoint_struct chkpscheme heat while heat.tsteps <= tsteps
+        heat.Tlast .= heat.Tnext
+        advance(heat)
+        heat.tsteps += 1
+    end
+    return reduce(+, heat.Tnext)
+end
+
+function heat_for(scheme::Scheme, tsteps::Int)
     n = 100
     Δx=0.1
     Δt=0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
-    # Create object from struct
+    # Create object from struct. tsteps is not needed for a for-loop
     heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
@@ -46,7 +57,27 @@ function heat(scheme::Scheme, tsteps::Int)
     heat.Tnext[end] = 0
 
     # Compute gradient
-    g = Zygote.gradient(sumheat, heat, scheme)
+    g = Zygote.gradient(sumheat_for, heat, scheme, tsteps)
+
+    return heat.Tnext, g[1].Tnext[2:end-1]
+end
+
+function heat_while(scheme::Scheme, tsteps::Int)
+    n = 100
+    Δx=0.1
+    Δt=0.001
+    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+    λ = 0.5
+
+    # Create object from struct
+    heat = Heat(zeros(n), zeros(n), n, λ, 1)
+
+    # Boundary conditions
+    heat.Tnext[1]   = 20.0
+    heat.Tnext[end] = 0
+
+    # Compute gradient
+    g = Zygote.gradient(sumheat_while, heat, scheme, tsteps)
 
     return heat.Tnext, g[1].Tnext[2:end-1]
 end

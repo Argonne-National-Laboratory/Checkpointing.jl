@@ -54,11 +54,13 @@ function forwardcount(periodic::Periodic)
     end
 end
 
-function checkpoint_struct(body::Function,
-        alg::Periodic,
-        model_input::MT,
-        shadowmodel::MT
-    ) where{MT}
+function checkpoint_struct_for(
+    body::Function,
+    alg::Periodic,
+    model_input::MT,
+    shadowmodel::MT,
+    range::Function
+) where{MT}
     model = deepcopy(model_input)
     model_final = []
     model_check_outer = alg.storage

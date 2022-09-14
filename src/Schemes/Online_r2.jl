@@ -22,19 +22,21 @@ mutable struct Online_r2{MT} <: Scheme where {MT}
     incr::Int
     offset::Int
     t::Int
-    verbose::Bool
+    verbose::Int
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
     ch::Vector{Int}
     ord_ch::Vector{Int}
     num_rep::Vector{Int}
-    revolve::Revolve
+    revolve::Revolve{MT}
+    storage::AbstractStorage
 end
 
 function Online_r2{MT}(
     checkpoints::Int,
     fstore::Union{Function,Nothing} = nothing,
-    frestore::Union{Function,Nothing} = nothing,
+    frestore::Union{Function,Nothing} = nothing;
+    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
     anActionInstance::Union{Nothing,Action} = nothing,
     verbose::Int = 0
 ) where {MT}
@@ -67,11 +69,10 @@ function Online_r2{MT}(
         ord_ch[i] = -1
         num_rep[i] = -1
     end
-    verbose = false
     revolve = Revolve{MT}(typemax(Int64), acp, fstore, frestore; verbose=3)
     online_r2 = Online_r2{MT}(check, capo, acp, numfwd, numcmd, numstore,
                             oldcapo, ind, oldind, iter, incr, offset, t,
-                            verbose, fstore, frestore, ch, ord_ch, num_rep, revolve)
+                            verbose, fstore, frestore, ch, ord_ch, num_rep, revolve, storage)
     return online_r2
 end
 
@@ -113,7 +114,7 @@ end
 function next_action!(online::Online_r2)::Action
     # Default values for next action
     actionflag     = none
-    if online.verbose
+    if online.verbose > 0
         if(online.check !=-1)
             @info(online.check+1,  online.ch[online.check+1],  online.capo)
             for i in 1:online.acp
@@ -127,18 +128,18 @@ function next_action!(online::Online_r2)::Action
         end
     end
     online.numcmd+=1
-    #We use this logic because the C++ version uses short circuiting
+    # We use this logic because the C++ version uses short circuiting
     cond2 = false
     if online.check != -1
       cond2 = online.ch[online.check+1] != online.capo
     end
     online.oldcapo = online.capo
     if ((online.check == -1) || ( cond2 && (online.capo <= online.acp-1)))
-    #condition for takeshot for r=1
+    # condition for takeshot for r=1
     #   (If no checkpoint has been taken before OR
     #    If a store has not just occurred AND the iteration count is
     #    less than the total number of checkpoints)
-        if online.verbose
+        if online.verbose > 0
             @info("condition for takeshot for r=1")
         end
         online.check += 1
@@ -168,20 +169,20 @@ function next_action!(online::Online_r2)::Action
         online.numstore+=1
         return Action(store, online.capo-1, -1, online.check)
     elseif (online.capo < online.acp-1)
-    #condition for advance for r=1
+    # condition for advance for r=1
     #   (the iteraton is less that the total number of checkpoints)
-        if online.verbose
+        if online.verbose > 0
             @info("condition for advance for r=1")
         end
         online.capo = online.oldcapo+1
         online.numfwd+=1
         return Action(forward, online.capo, online.oldcapo, -1)
     else
-    #Online_r2-Checkpointing for r=2
+    # Online_r2-Checkpointing for r=2
         if (online.ch[online.check+1] == online.capo)
             # condition for advance for r=2
             # (checkpoint has just occurred)
-            if online.verbose
+            if online.verbose > 0
                 @info("Online_r2-condition for advance for r=2 online.acp=", online.acp)
             end
             if (online.acp == 1)
@@ -209,7 +210,7 @@ function next_action!(online::Online_r2)::Action
                 actionflag = forward
                 return Action(forward, online.capo, online.oldcapo, -1)
       	    else
-                if online.verbose
+                if online.verbose > 0
                      @info("Online_r2-condition for advance for r=2 online.acp-1=", online.acp-1," online.capo= ", online.capo)
                 end
                 if (online.capo == online.acp-1)
@@ -231,27 +232,27 @@ function next_action!(online::Online_r2)::Action
                     end
                     return Action(forward, online.capo, online.oldcapo, -1)
                 end
-      		    if (online.verbose)
+                if online.verbose > 0
                     @info(" iter ", iter, "incr ", incr)
                 end
                 error(" not implemented yet")
                 return Action(done, online.capo, online.oldcapo, -1)
             end
         else
-            #takeshot for r=2
-            if (online.verbose)
+            # takeshot for r=2
+            if online.verbose > 0
                 @info("Online_r2-condition for takeshot for r=2 online.acp =", online.acp)
             end
             if (online.acp == 2)
                 online.ch[1+1] = online.capo
                 online.incr+=1
-      		    #Increase the number of takeshots and the corresponding checkpoint
+                # Increase the number of takeshots and the corresponding checkpoint
       		    online.numstore+=1
                 return Action(store, online.capo-1, -1, 1+1)
             elseif (online.acp == 3)
                 online.ch[online.ind+1] = online.capo
       		    online.check = online.ind
-                if (online.verbose)
+                if online.verbose > 0
       		        @info(" iter ", online.iter, " online.num_rep[1] ", online.num_rep[1+1])
                 end
       		    if (online.iter == online.num_rep[1+1])
@@ -262,11 +263,11 @@ function next_action!(online::Online_r2)::Action
       			    online.ind = 2 - online.num_rep[1+1]%2
       			    online.incr=1
                 end
-      		    #Increase the number of takeshots and the corresponding checkpoint
+      		    # Increase the number of takeshots and the corresponding checkpoint
       		    online.numstore+=1
                 return Action(store, online.capo-1, -1, online.check)
             else
-                if (online.verbose)
+                if online.verbose > 0
                     @info(" online.capo ", online.capo, " online.acp ", online.acp)
                 end
                 if (online.capo < online.acp+2)
@@ -275,7 +276,7 @@ function next_action!(online::Online_r2)::Action
       			    if (online.capo == online.acp+1)
                         online.oldind = online.ord_ch[online.acp-1+1]
                         online.ind = online.ch[online.ord_ch[online.acp-1+1]+1]
-      				    if (online.verbose)
+                        if online.verbose > 0
                             @info(" oldind ", online.oldind, " ind ", online.ind)
                         end
                         for k=online.acp:-1:3
@@ -286,7 +287,7 @@ function next_action!(online::Online_r2)::Action
       				    online.ch[online.ord_ch[1+1]+1] = online.ind
       				    online.incr = 2
       				    online.ind = 2
-      				    if (online.verbose)
+                        if online.verbose > 0
       				    	@info(" ind ", online.ind, " incr ", online.incr, " iter ", online.iter)
                             for j=1:online.acp
       				    	    @info(" j ", j, " ord_ch ", online.ord_ch[j], " ch ", online.ch[online.ord_ch[j]+1], " rep ", online.num_rep[online.ord_ch[j]+1])
@@ -299,7 +300,7 @@ function next_action!(online::Online_r2)::Action
                 end
 
                 if (online.t == 0)
-                    if (online.verbose)
+                    if online.verbose > 0
                         @info(" online.ind ", online.ind, " online.incr ",  online.incr, " iter ", online.iter, " offset ", online.offset)
                     end
                     if (online.iter == online.offset)
@@ -309,7 +310,7 @@ function next_action!(online::Online_r2)::Action
                         online.ch[online.ord_ch[online.acp-1+1]+1] = online.capo
                         online.oldind = online.ord_ch[online.acp-1+1]
                         online.ind = online.ch[online.ord_ch[online.acp-1+1]+1]
-                        if (online.verbose)
+                        if online.verbose > 0
                             @info(" oldind " , online.oldind , " ind " , online.ind)
                         end
                         for k=online.acp-1:-1:online.incr+1
@@ -320,7 +321,7 @@ function next_action!(online::Online_r2)::Action
                         online.ch[online.ord_ch[online.incr+1]+1] = online.ind
                         online.incr+=1
                         online.ind=online.incr
-                        if (online.verbose)
+                        if online.verbose > 0
                             @info(" ind ", online.ind, " incr ", online.incr, " iter ", online.iter)
                             for j=1:online.acp
                                 @info(" j ", j, " ord_ch ", online.ord_ch[j], " ch ", online.ch[online.ord_ch[j]+1], " rep ", online.num_rep[online.ord_ch[j]+1])
@@ -331,7 +332,7 @@ function next_action!(online::Online_r2)::Action
                         online.check = online.ord_ch[online.ind+1]
                         online.iter+=1
                         online.ind+=1
-                        if (online.verbose)
+                        if online.verbose > 0
                             @info(" xx ind ", online.ind, " incr ", online.incr, " iter ", online.iter)
                         end
                     end
@@ -347,4 +348,79 @@ function next_action!(online::Online_r2)::Action
     #  another Online_r2 Checkpointing class must be started
     @info("Online_r2 is optimal over the range [0,(numcheckpoints+2)*(numcheckpoints+1)/2]. Online_r3 needs to be implemented")
     return Action(error, online.capo, online.oldcapo, -1)
+end
+
+function checkpoint_struct_while(
+    body::Function,
+    alg::Online_r2,
+    model_input::MT,
+    shadowmodel::MT,
+    condition::Function
+) where {MT}
+    model = deepcopy(model_input)
+    model_check = alg.storage
+    model_final = []
+    freeindices = Stack{Int32}()
+    storemapinv = Dict{Int32,Int32}()
+    storemap = Dict{Int32,Int32}()
+    check = 0
+    oldcapo=0
+    onlinesteps=0
+    go = true
+    while go
+        next_action = next_action!(alg)
+        if (next_action.actionflag == Checkpointing.store)
+            check=next_action.cpnum+1
+            storemapinv[check]=next_action.iteration
+            model_check[check] = deepcopy(model)
+        elseif (next_action.actionflag == Checkpointing.forward)
+            for j= oldcapo:(next_action.iteration-1)
+                if go
+                    body(model)
+                    go = condition(model)
+                end
+                onlinesteps=onlinesteps+1
+            end
+            oldcapo=next_action.iteration
+        else
+            @error("Unexpected action in online phase: ", next_action.actionflag)
+        end
+    end
+    for (key, value) in storemapinv
+        storemap[value]=key
+    end
+
+    # Switch to offline revolve now.
+    update_revolve(alg, onlinesteps+1)
+    while true
+        next_action = next_action!(alg.revolve)
+        if (next_action.actionflag == Checkpointing.store)
+            check=pop!(freeindices)
+            storemap[next_action.iteration-1]=check
+            model_check[check] = deepcopy(model)
+        elseif (next_action.actionflag == Checkpointing.forward)
+            for j= next_action.startiteration:(next_action.iteration-1)
+                body(model)
+            end
+        elseif (next_action.actionflag == Checkpointing.firstuturn)
+            # Commented out lines are weird
+            # body(model)
+            model_final = deepcopy(model)
+            # Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+        elseif (next_action.actionflag == Checkpointing.uturn)
+            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            if haskey(storemap,next_action.iteration-1-1)
+                push!(freeindices, storemap[next_action.iteration-1-1])
+                delete!(storemap,next_action.iteration-1-1)
+            end
+        elseif (next_action.actionflag == Checkpointing.restore)
+            model = deepcopy(model_check[storemap[next_action.iteration-1]])
+        elseif next_action.actionflag == Checkpointing.done
+            if haskey(storemap,next_action.iteration-1-1)
+                delete!(storemap,next_action.iteration-1-1)
+            end
+            break
+        end
+    end
+    return model_final
 end

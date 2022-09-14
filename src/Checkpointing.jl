@@ -61,7 +61,8 @@ function jacobian(tobedifferentiated, F_H, ::AbstractADTool)
     error("No AD tool interface implemented")
 end
 
-export Scheme, AbstractADTool, jacobian, @checkpoint, @checkpoint_struct, checkpoint_struct
+export Scheme, AbstractADTool, jacobian
+export @checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
 
 function serialize(x)
     s = IOBuffer()
@@ -115,22 +116,43 @@ function create_tangent(shadowmodel::MT) where {MT}
 end
 
 function ChainRulesCore.rrule(
-    ::typeof(Checkpointing.checkpoint_struct),
+    ::typeof(Checkpointing.checkpoint_struct_for),
     body::Function,
     alg::Scheme,
     model::MT,
     shadowmodel::MT,
+    range::Function
 ) where {MT}
     model_input = deepcopy(model)
-    # shadowmodel = deepcopy(model)
     for i in 1:alg.steps
         body(model)
     end
     function checkpoint_struct_pullback(dmodel)
         copyto!(shadowmodel, dmodel)
-        model = checkpoint_struct(body, alg, model_input, shadowmodel)
+        model = checkpoint_struct_for(body, alg, model_input, shadowmodel, range)
         dshadowmodel = create_tangent(shadowmodel)
-        return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent()
+        return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent(), NoTangent()
+    end
+    return model, checkpoint_struct_pullback
+end
+
+function ChainRulesCore.rrule(
+    ::typeof(Checkpointing.checkpoint_struct_while),
+    body::Function,
+    alg::Scheme,
+    model::MT,
+    shadowmodel::MT,
+    condition::Function
+) where {MT}
+    model_input = deepcopy(model)
+    while condition(model)
+        body(model)
+    end
+    function checkpoint_struct_pullback(dmodel)
+        copyto!(shadowmodel, dmodel)
+        model = checkpoint_struct_while(body, alg, model_input, shadowmodel, condition)
+        dshadowmodel = create_tangent(shadowmodel)
+        return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent(), NoTangent()
     end
     return model, checkpoint_struct_pullback
 end
@@ -149,11 +171,28 @@ adjoints and is created here.  It is supposed to be initialized by ChainRules.
 
 """
 macro checkpoint_struct(alg, model, loop)
-    ex = quote
-        shadowmodel = deepcopy($model)
-        $model = checkpoint_struct($alg, $model, shadowmodel) do $model
-            $(loop.args[2])
+    if loop.head == :for
+        ex = quote
+            shadowmodel = deepcopy($model)
+            function range()
+                $(loop.args[1])
+            end
+            $model = checkpoint_struct_for($alg, $model, shadowmodel, range) do $model
+                $(loop.args[2])
+            end
         end
+    elseif loop.head == :while
+        ex = quote
+            shadowmodel = deepcopy($model)
+            function condition($model)
+                $(loop.args[1])
+            end
+            $model = checkpoint_struct_while($alg, $model, shadowmodel, condition) do $model
+                $(loop.args[2])
+            end
+        end
+    else
+        error("Checkpointing.jl: Unknown loop construct.")
     end
     esc(ex)
 end
@@ -173,7 +212,10 @@ are seeded and retrieved.
 """
 macro checkpoint_struct(alg, model, shadowmodel, loop)
     ex = quote
-        $model = checkpoint_struct($alg, $model, $shadowmodel) do $model
+        function range()
+            $(loop.args[1])
+        end
+        $model = checkpoint_struct_for($alg, $model, $shadowmodel, range) do $model
             $(loop.args[2])
         end
     end
