@@ -7,6 +7,7 @@ The schemes are agnostic to the ADTool being used and can be easily interfaced w
 
 1. Revolve/Binomial checkpointing [1]
 2. Periodic checkpointing
+3. Online r=2 checkpointing for while loops with a priori unknown number of iterations [2]
 
 ## Installation
 
@@ -89,11 +90,12 @@ The following features are planned for development:
 * Composition of checkpointing schemes
 * Multi-level checkpointing schemes
 
-[1] Andreas Griewank and Andrea Walther. 2000. Algorithm 799: revolve: an implementation of checkpointing for the reverse or adjoint mode of computational differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI:https://doi.org/10.1145/347837.347846
+[1] Andreas Griewank and Andrea Walther, Algorithm 799: Revolve: An Implementation of Checkpointing for the Reverse or Adjoint Mode of Computational Differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI: [10.1145/347837.347846](https://doi.org/10.1145/347837.347846)
+[2] Philipp Stumm and Andrea Walther, New Algorithms for Optimal Online Checkpointing, 2010, DOI: (10.1137/080742439)[(https://doi.org/10.1137/080742439)
 
 ## Funding
 
-This work is supported by the NSF Cyberinfrastructure for Sustained Scientific Innovation (CSSI) program project (DJ4Earth)[https://dj4earth.github.io/]
+This work is supported by the NSF Cyberinfrastructure for Sustained Scientific Innovation (CSSI) program project [DJ4Earth](https://dj4earth.github.io/)
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://Argonne-National-Laboratory.github.io/Checkpointing.jl/
