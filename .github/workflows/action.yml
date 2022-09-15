@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        julia-version: ['1.7']
+        julia-version: ['1.7', '1.8']
         julia-arch: [x64]
 
     steps:
