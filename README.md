@@ -3,7 +3,7 @@
 
 This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
 
-The schemes are agnostic to the ADTool being used and can be easily interfaced with any Julia AD tool. Currently the package provides the following checkpointing schemes:
+The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package provides the following checkpointing schemes:
 
 1. Revolve/Binomial checkpointing [1]
 2. Periodic checkpointing
@@ -17,7 +17,7 @@ add Checkpointing
 
 ## Usage: Example 1D heat equation
 
-We present an example code where Zygote is used to differentiate the implementation of the explicit 1D heat equation. The macro `@checkpointing_struct` covers the transformation of `for` loops with `1:tsteps` ranges where `tsteps=500` is the number of timesteps. As a checkpointing scheme we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
+We present an example code where Zygote is used to differentiate the implementation of the explicit 1D heat equation. The macro `@checkpointing_struct` covers the transformation of `for` loops with `1:tsteps` ranges where `tsteps=500` is the number of timesteps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
 
 ```julia
 # Explicit 1D heat equation
