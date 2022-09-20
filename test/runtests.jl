@@ -210,4 +210,38 @@ include("../examples/adtools.jl")
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
     end
+    @testset "Test box model example" begin
+        include("../examples/box_model.jl")
+
+        @testset "Testing Revolve..." begin
+            steps = 10000
+            snaps = 100
+            info = 0
+
+            revolve = Revolve{Box}(steps, snaps; verbose=info)
+            dT = box_for(revolve, steps)
+
+            @test isapprox(dT[2][5], 0.00616139595759519, atol=1e-9)
+        end
+
+        @testset "Testing All Enzyme..." begin
+            steps = 10000
+            snaps = 100
+            info = 0
+
+            periodic = Periodic{Box}(steps, snaps; verbose=info)
+            dT = box_for(periodic, steps)
+            @test isapprox(dT[2][5], 0.00616139595759519, atol=1e-11)
+        end
+
+        @testset "Testing Online_r2..." begin
+            steps = 2
+            snaps = 5
+            info = 0
+            online = Online_r2{Box}(snaps; verbose=info)
+            dT = box_while(online, steps)
+            @test isapprox(dT[2][5], 0.00616139595759519, atol=1e-11)
+        end
+        
+    end
 end
