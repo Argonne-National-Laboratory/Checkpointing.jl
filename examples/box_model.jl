@@ -1,12 +1,3 @@
-#=
-using Checkpointing
-using LinearAlgebra
-using DataStructures
-# All tested AD tools
-using Zygote, Enzyme
-# Include all the AD tool interfaces through `jacobian()`
-include("../examples/adtools.jl")
-=#
 const blength = [5000.0e5; 1000.0e5; 5000.0e5]   ## north-south size of boxes, centimeters
 
 const bdepth = [1.0e5; 5.0e5; 4.0e5]   ## depth of boxes, centimeters
@@ -126,6 +117,7 @@ mutable struct Box
     in_old::Vector{Float64}
     out_now::Vector{Float64}
     out_old::Vector{Float64}
+    i::Int
 end
 
 function forward_func_4_AD(in_now, in_old, out_old, out_now)
@@ -142,12 +134,12 @@ end
 
 
 function advance(box::Box)
-    forward_func_4_AD(box.in_now, box.in_old, box.out_now, box.out_old) 
+    forward_func_4_AD(box.in_now, box.in_old, box.out_now, box.out_old)
 end
 
 function timestepper_for(box::Box, scheme::Scheme, tsteps::Int)
     @checkpoint_struct scheme box for i in 1:tsteps
-        advance(box) 
+        advance(box)
         box.in_now[:] = box.out_old
         box.in_old[:] = box.out_now
         nothing
@@ -161,20 +153,20 @@ function box_for(scheme::Scheme, tsteps::Int)
     Sbar = [35.5; 34.5; 34.5]
 
     # Create object from struct. tsteps is not needed for a for-loop
-    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6))
+    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
 
     # Compute gradient
     g = Zygote.gradient(timestepper_for, box, scheme, tsteps)
-    return g[1]
+    return box.out_now[1], g[1]
 end
 
 function timestepper_while(box::Box, scheme::Scheme, tsteps::Int)
-    i=1
-    @checkpoint_struct scheme box while i <= 1
-        advance(box) 
+    box.i=1
+    @checkpoint_struct scheme box while box.i <= tsteps
+        advance(box)
         box.in_now[:] = box.out_old
         box.in_old[:] = box.out_now
-        i = i+1
+        box.i = box.i+1
         nothing
     end
     return box.out_now[1]
@@ -186,10 +178,9 @@ function box_while(scheme::Scheme, tsteps::Int)
     Sbar = [35.5; 34.5; 34.5]
 
     # Create object from struct. tsteps is not needed for a for-loop
-    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6))
+    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
 
     # Compute gradient
     g = Zygote.gradient(timestepper_while, box, scheme, tsteps)
-    @show(g)
-    return g[1]
+    return box.out_now[1], g[1]
 end

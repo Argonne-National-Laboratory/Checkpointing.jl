@@ -35,6 +35,7 @@ done: we are done with adjoining the loop equivalent to the `terminate` enum val
 	forward
 	firstuturn
 	uturn
+    err
 	done
 end
 
@@ -166,6 +167,7 @@ function ChainRulesCore.rrule(
         body(model)
     end
     function checkpoint_struct_pullback(dmodel)
+        set_zero!(shadowmodel)
         copyto!(shadowmodel, dmodel)
         model = checkpoint_struct_while(body, alg, model_input, shadowmodel, condition)
         dshadowmodel = create_tangent(shadowmodel)
