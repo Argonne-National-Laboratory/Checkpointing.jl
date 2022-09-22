@@ -17,7 +17,6 @@ end
 x = [2.0,6.0]
 
 J = ReverseDiff.jacobian(f, x)
-@show J
 
 dx = copy(x)
 dx = [0.0,0.0]

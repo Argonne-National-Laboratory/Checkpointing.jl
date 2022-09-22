@@ -219,9 +219,10 @@ include("../examples/adtools.jl")
             info = 0
 
             revolve = Revolve{Box}(steps, snaps; verbose=info)
-            dT = box_for(revolve, steps)
+            T, dT = box_for(revolve, steps)
+            @test isapprox(T, 21.41890316892692)
+            @test isapprox(dT[2][5], 0.00616139595759519)
 
-            @test isapprox(dT[2][5], 0.00616139595759519, atol=1e-9)
         end
 
         @testset "Testing All Enzyme..." begin
@@ -230,18 +231,19 @@ include("../examples/adtools.jl")
             info = 0
 
             periodic = Periodic{Box}(steps, snaps; verbose=info)
-            dT = box_for(periodic, steps)
-            @test isapprox(dT[2][5], 0.00616139595759519, atol=1e-11)
+            T, dT = box_for(periodic, steps)
+            @test isapprox(T, 21.41890316892692)
+            @test isapprox(dT[2][5], 0.00616139595759519)
         end
 
         @testset "Testing Online_r2..." begin
-            steps = 2
-            snaps = 5
+            steps = 10000
+            snaps = 500
             info = 0
             online = Online_r2{Box}(snaps; verbose=info)
-            dT = box_while(online, steps)
-            @test isapprox(dT[2][5], 0.00616139595759519, atol=1e-11)
+            T, dT = box_while(online, steps)
+            @test isapprox(T, 21.41890316892692)
+            @test isapprox(dT[2][5], 0.00616139595759519)
         end
-        
     end
 end

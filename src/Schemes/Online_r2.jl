@@ -69,7 +69,7 @@ function Online_r2{MT}(
         ord_ch[i] = -1
         num_rep[i] = -1
     end
-    revolve = Revolve{MT}(typemax(Int64), acp, fstore, frestore; verbose=3)
+    revolve = Revolve{MT}(typemax(Int64), acp, fstore, frestore; verbose=verbose)
     online_r2 = Online_r2{MT}(check, capo, acp, numfwd, numcmd, numstore,
                             oldcapo, ind, oldind, iter, incr, offset, t,
                             verbose, fstore, frestore, ch, ord_ch, num_rep, revolve, storage)
@@ -347,7 +347,7 @@ function next_action!(online::Online_r2)::Action
     # This means that the end of Online_r2 Checkpointing for r=2 is reached and
     #  another Online_r2 Checkpointing class must be started
     @info("Online_r2 is optimal over the range [0,(numcheckpoints+2)*(numcheckpoints+1)/2]. Online_r3 needs to be implemented")
-    return Action(error, online.capo, online.oldcapo, -1)
+    return Action(err, online.capo, online.oldcapo, -1)
 end
 
 function checkpoint_struct_while(
@@ -375,15 +375,17 @@ function checkpoint_struct_while(
             model_check[check] = deepcopy(model)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j= oldcapo:(next_action.iteration-1)
-                if go
-                    body(model)
-                    go = condition(model)
-                end
+                body(model)
+                go = condition(model)
                 onlinesteps=onlinesteps+1
+                if !go
+                    break
+                end
             end
             oldcapo=next_action.iteration
         else
             @error("Unexpected action in online phase: ", next_action.actionflag)
+            go = false
         end
     end
     for (key, value) in storemapinv
