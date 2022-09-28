@@ -30,7 +30,7 @@ include("../examples/adtools.jl")
         include("jacobian.jl")
     end
     @testset "Test optcontrol" begin
-        @testset "AD Tool $adtool" for adtool in [EnzymeADTool()]#, ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
+        @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
             @testset "Testing Revolve..." begin
                 include("../examples/deprecated/optcontrol.jl")
                 global steps = 100
