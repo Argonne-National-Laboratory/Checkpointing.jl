@@ -116,6 +116,10 @@ function create_tangent(shadowmodel::MT) where {MT}
     return Tangent{MT,typeof(shadowtuple)}(shadowtuple)
 end
 
+function set_zero!(::Ptr{Nothing})
+    return nothing
+end
+
 function set_zero!(nestedmodel::MT) where {MT}
     if length(fieldnames(MT)) == 0
         if isreal(nestedmodel)
