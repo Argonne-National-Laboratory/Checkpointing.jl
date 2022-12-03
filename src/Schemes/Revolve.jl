@@ -364,6 +364,26 @@ function forwardcount(revolve::Revolve)
     return ret
 end
 
+function reset(revolve::Revolve)
+    revolve.cstart = 0
+    revolve.tail   = 1
+    if revolve.bundle > 1
+        tail = mod(steps, bundle)
+        steps = steps / bundle
+        if tail > 0
+            step += 1
+        else
+            tail = bundle
+        end
+    end
+    revolve.numfwd          = 0
+    revolve.numinv          = 0
+    revolve.numstore        = 0
+    revolve.rwcp            = -1
+    revolve.prevcend        = 0
+    revolve.firstuturned    = false
+end
+
 function checkpoint_struct_for(
     body::Function,
     alg::Revolve,
