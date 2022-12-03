@@ -64,6 +64,7 @@ end
 
 export Scheme, AbstractADTool, jacobian
 export @checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
+export reset
 
 function serialize(x)
     s = IOBuffer()
