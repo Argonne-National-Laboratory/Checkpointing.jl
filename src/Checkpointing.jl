@@ -104,7 +104,7 @@ end
 
 function copyto!(dest::MT, src::TT) where {MT,TT}
     for name in (fieldnames(MT))
-        if !isa(src[name], ChainRulesCore.ZeroTangent)
+        if !isa(src[name], ChainRulesCore.ZeroTangent) && !isa(getfield(dest,name), Int)
             setfield!(dest, name, convert(typeof(getfield(dest, name)), src[name]))
         end
     end
