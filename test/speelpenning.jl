@@ -13,7 +13,7 @@ function main()
 
     dx = zeros(n)
     dy = [1.0]
-    autodiff(speelpenning, Duplicated(y,dy), Duplicated(x,dx))
+    autodiff(Reverse, speelpenning, Duplicated(y,dy), Duplicated(x,dx))
     y = [0.0]
     speelpenning(y,x)
 

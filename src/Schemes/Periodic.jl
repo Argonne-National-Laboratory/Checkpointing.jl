@@ -81,7 +81,7 @@ function checkpoint_struct_for(
         end
         for j= alg.period:-1:1
             model = deepcopy(model_check_inner[j])
-            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
         end
     end
     return model_final

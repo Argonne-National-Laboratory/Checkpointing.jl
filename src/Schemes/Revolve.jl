@@ -409,9 +409,9 @@ function checkpoint_struct_for(
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
             model_final =  deepcopy(model)
-            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
         elseif (next_action.actionflag == Checkpointing.uturn)
-            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
             if haskey(storemap,next_action.iteration-1-1)
                 delete!(storemap,next_action.iteration-1-1)
                 check=check-1
