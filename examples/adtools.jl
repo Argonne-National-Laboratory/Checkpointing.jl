@@ -34,7 +34,7 @@ function Checkpointing.jacobian(tobedifferentiated, F_H, ::EnzymeADTool)
         fill!(dx, 0)
         fill!(y, 0)
         dy[i] = 1.0
-        autodiff(f, Duplicated(x,dx), Duplicated(y, dy))
+        autodiff(Reverse, f, Duplicated(x,dx), Duplicated(y, dy))
         J[i,:] = dx[:]
     end
     return J

@@ -29,7 +29,7 @@ include("../examples/adtools.jl")
     @testset "Testing Jacobian interface..." begin
         include("jacobian.jl")
     end
-    @testset "Test optcontrol" begin
+    @testset "Test optcontrol deprecated" begin
         @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
             @testset "Testing Revolve..." begin
                 include("../examples/deprecated/optcontrol.jl")
