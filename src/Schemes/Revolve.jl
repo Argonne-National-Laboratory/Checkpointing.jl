@@ -396,6 +396,7 @@ function checkpoint_struct_for(
     check = 0
     model_check = alg.storage
     model_final = []
+    GC.enable(false)
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
@@ -410,8 +411,10 @@ function checkpoint_struct_for(
             body(model)
             model_final =  deepcopy(model)
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            GC.gc()
         elseif (next_action.actionflag == Checkpointing.uturn)
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            GC.gc()
             if haskey(storemap,next_action.iteration-1-1)
                 delete!(storemap,next_action.iteration-1-1)
                 check=check-1
@@ -426,5 +429,6 @@ function checkpoint_struct_for(
             break
         end
     end
+    GC.enable(true)
     return model_final
 end
