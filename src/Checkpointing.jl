@@ -4,6 +4,12 @@ using ChainRulesCore
 using LinearAlgebra
 using DataStructures
 using Enzyme
+using Enzyme: EnzymeRules
+import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
+using .EnzymeRules
+# using Enzyme.EnzymeCore.EnzymeRules
+# import EnzymeCore.EnzymeRules: augmented_primal, reverse, has_rrule_from_sig
+# using EnzymeCore.EnzymeRules
 using Serialization
 using HDF5
 
@@ -94,6 +100,11 @@ include("Schemes/Online_r2.jl")
 export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export ReverseDiffADTool, ZygoteADTool, EnzymeADTool, ForwardDiffADTool, DiffractorADTool, jacobian
 export Online_r2, update_revolve
+# export EnzymeCore.EnzymeRules.augmented_primal
+# export EnzymeCore.EnzymeRules.reverse
+# export EnzymeCore.EnzymeRules.has_frule_from_sig
+# export EnzymeCore.EnzymeRules.has_rrule_from_sig
+# export EnzymeCore.EnzymeRules.forward
 
 @generated function copyto!(dest::MT, src::MT) where {MT}
     assignments = [
@@ -159,6 +170,69 @@ function ChainRulesCore.rrule(
     return model, checkpoint_struct_pullback
 end
 
+function augmented_primal(
+    config,
+    func::Const{typeof(checkpoint_struct_for)},
+    ret::Type{<:Const},
+    body::Function,
+    # alg::Type{<:Const},
+    model::Duplicated{MT},
+    # range::Type{<:Const},
+) where {MT}
+    println("Augemented forward checkpointing")
+    return AugmentedReturn(nothing, nothing, nothing)
+end
+
+function reverse(
+    config,
+    ::Const{typeof(Checkpointing.checkpoint_struct_for)},
+    dret::Type{<:Const},
+    tape,
+    a,
+    shadowmodel::Duplicated,
+)# where {MT}
+    println("Reverse checkpointing")
+    # @show typeof(shadowmodel)
+    # set_zero!(shadowmodel)
+    # copyto!(shadowmodel, dmodel)
+    # (model_input, alg, range) = tape
+    # shadowmodel = checkpoint_struct_for(
+    #     body,
+    #     alg,
+    #     model_input,
+    #     shadowmodel,
+    #     range
+    # )
+    return ()
+end
+g(x) = sum(x .^ 2)
+export g
+function augmented_primal(
+    config,
+    func::Const{typeof(g)},
+    ::Type{<:Active},
+    x::Duplicated
+)
+    println("Augmented forward")
+    if needs_primal(config)
+        return AugmentedReturn(1.0, nothing, nothing)
+    else
+        return AugmentedReturn(nothing, nothing, nothing)
+    end
+end
+
+function reverse(
+    config,
+    func::Const{typeof(g)},
+    dret::Active,
+    tape,
+    x::Duplicated
+)
+    println("Reverse")
+    return ()
+end
+export augmented_primal, reverse
+
 function ChainRulesCore.rrule(
     ::typeof(Checkpointing.checkpoint_struct_while),
     body::Function,
@@ -197,12 +271,15 @@ adjoints and is created here.  It is supposed to be initialized by ChainRules.
 macro checkpoint_struct(alg, model, loop)
     if loop.head == :for
         ex = quote
-            shadowmodel = deepcopy($model)
+            # shadowmodel = deepcopy($model)
             function range()
                 $(loop.args[1])
             end
-            $model = checkpoint_struct_for($alg, $model, shadowmodel, range) do $model
+            # $model = checkpoint_struct_for($alg, $model, shadowmodel, 1:3) do $model
+            # checkpoint_struct_for($alg, $model, range) do $model
+            checkpoint_struct_for($model) do $model
                 $(loop.args[2])
+                nothing
             end
         end
     elseif loop.head == :while
@@ -220,6 +297,16 @@ macro checkpoint_struct(alg, model, loop)
         error("Checkpointing.jl: Unknown loop construct.")
     end
     esc(ex)
+end
+
+# function checkpoint_struct_for(body, alg, model, range)
+function checkpoint_struct_for(body, model)
+    # for i in range()
+        body(model)
+    # model.Tnext .*= model.Tlast
+    # end
+    println("Undifferentiated")
+    return nothing
 end
 
 """

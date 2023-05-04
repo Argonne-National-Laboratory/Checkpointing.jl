@@ -82,9 +82,9 @@ function Revolve{MT}(
         if predfwdcnt == -1
             error("Revolve: error returned by  revolve::forwardcount")
         else
-            @info "prediction:"
-            @info " overhead forward steps : $predfwdcnt"
-            @info " overhead factor        : $(predfwdcnt/steps)"
+            @info "Prediction:"
+            @info "Forward steps   : $(Int(predfwdcnt))"
+            @info "Overhead factor : $(predfwdcnt/(steps+1))"
         end
     end
     return revolve
@@ -119,11 +119,11 @@ function next_action!(revolve::Revolve)::Action
             # we are done
             revolve.rwcp = revolve.rwcp - 1
             if revolve.verbose > 2
-                @info "done"
+                @info "Done"
             end
             if revolve.verbose > 0
-                @info "summary:"
-                @info " overhead forward steps: $(revolve.numfwd)"
+                @info "Summary:"
+                @info " Forward steps: $(revolve.numfwd)"
                 @info " CP stores             : $(revolve.numstore)"
                 @info " NextAction calls      : $(revolve.numinv)"
             end
@@ -364,7 +364,7 @@ function forwardcount(revolve::Revolve)
     return ret
 end
 
-function reset(revolve::Revolve)
+function reset!(revolve::Revolve)
     revolve.cstart = 0
     revolve.tail   = 1
     if revolve.bundle > 1
@@ -382,49 +382,51 @@ function reset(revolve::Revolve)
     revolve.rwcp            = -1
     revolve.prevcend        = 0
     revolve.firstuturned    = false
+    return nothing
 end
 
-function checkpoint_struct_for(
-    body::Function,
-    alg::Revolve,
-    model_input::MT,
-    shadowmodel::MT,
-    range
-) where {MT}
-    model = deepcopy(model_input)
-    storemap = Dict{Int32,Int32}()
-    check = 0
-    model_check = alg.storage
-    model_final = []
-    while true
-        next_action = next_action!(alg)
-        if (next_action.actionflag == Checkpointing.store)
-            check = check+1
-            storemap[next_action.iteration-1]=check
-            model_check[check] = deepcopy(model)
-        elseif (next_action.actionflag == Checkpointing.forward)
-            for j= next_action.startiteration:(next_action.iteration - 1)
-                body(model)
-            end
-        elseif (next_action.actionflag == Checkpointing.firstuturn)
-            body(model)
-            model_final =  deepcopy(model)
-            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
-        elseif (next_action.actionflag == Checkpointing.uturn)
-            Enzyme.autodiff(body, Duplicated(model,shadowmodel))
-            if haskey(storemap,next_action.iteration-1-1)
-                delete!(storemap,next_action.iteration-1-1)
-                check=check-1
-            end
-        elseif (next_action.actionflag == Checkpointing.restore)
-            model = deepcopy(model_check[storemap[next_action.iteration-1]])
-        elseif next_action.actionflag == Checkpointing.done
-            if haskey(storemap,next_action.iteration-1-1)
-                delete!(storemap,next_action.iteration-1-1)
-                check=check-1
-            end
-            break
-        end
-    end
-    return model_final
-end
+# function checkpoint_struct_for(
+#     body::Function,
+#     model_input::MT,
+#     alg::Revolve,
+#     shadowmodel::MT,
+#     range::Function
+# ) where {MT}
+#     println("checkpoint_struct_for")
+#     model = deepcopy(model_input)
+#     storemap = Dict{Int32,Int32}()
+#     check = 0
+#     model_check = alg.storage
+#     model_final = []
+#     while true
+#         next_action = next_action!(alg)
+#         if (next_action.actionflag == Checkpointing.store)
+#             check = check+1
+#             storemap[next_action.iteration-1]=check
+#             model_check[check] = deepcopy(model)
+#         elseif (next_action.actionflag == Checkpointing.forward)
+#             for j= next_action.startiteration:(next_action.iteration - 1)
+#                 body(model)
+#             end
+#         elseif (next_action.actionflag == Checkpointing.firstuturn)
+#             body(model)
+#             model_final =  deepcopy(model)
+#             Enzyme.autodiff(Enzyme.Reverse, body, Duplicated(model,shadowmodel))
+#         elseif (next_action.actionflag == Checkpointing.uturn)
+#             Enzyme.autodiff(Enzyme.Reverse, body, Duplicated(model,shadowmodel))
+#             if haskey(storemap,next_action.iteration-1-1)
+#                 delete!(storemap,next_action.iteration-1-1)
+#                 check=check-1
+#             end
+#         elseif (next_action.actionflag == Checkpointing.restore)
+#             model = deepcopy(model_check[storemap[next_action.iteration-1]])
+#         elseif next_action.actionflag == Checkpointing.done
+#             if haskey(storemap,next_action.iteration-1-1)
+#                 delete!(storemap,next_action.iteration-1-1)
+#                 check=check-1
+#             end
+#             break
+#         end
+#     end
+#     return nothing
+# end
