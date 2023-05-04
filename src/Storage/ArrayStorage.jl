@@ -1,3 +1,9 @@
+"""
+    ArrayStorage
+
+Array (RAM) storage for checkpointing.
+
+"""
 struct ArrayStorage{MT} <: AbstractStorage where {MT}
     _storage::Array{MT}
 end

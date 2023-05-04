@@ -58,11 +58,9 @@ function muoptcontrol(scheme, steps)
     t = 0.0
     h = 1.0/steps
     model = Model(F, F_H, t, h)
-    # Just make sure it's all zero.
-    shadowmodel = Model([0.0,0.0], [0.0,0.0], 0.0, 0.0)
 
     function foo(model::Model)
-        @checkpoint_struct scheme model shadowmodel for i in 1:steps
+        @checkpoint_struct scheme model for i in 1:steps
             model.F_H .= model.F
             advance(model)
             model.t += h

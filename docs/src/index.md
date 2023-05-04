@@ -3,13 +3,13 @@
 
 The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package provides the following checkpointing schemes:
 
+* Online checkpointing schemes for adaptive timestepping
 * Revolve/Binomial checkpointing [1]
 * Periodic checkpointing
 
 ## Future
 The following features are planned for development:
 
-* Online checkpointing schemes for adaptive timestepping 
 * Composition of checkpointing schemes
 * Multi-level checkpointing schemes
 

@@ -154,10 +154,11 @@ function box_for(scheme::Scheme, tsteps::Int)
 
     # Create object from struct. tsteps is not needed for a for-loop
     box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
+    dbox = Box(zeros(6), zeros(6), zeros(6), zeros(6), 0)
 
     # Compute gradient
-    g = Zygote.gradient(timestepper_for, box, scheme, tsteps)
-    return box.out_now[1], g[1]
+    autodiff(Enzyme.ReverseWithPrimal, timestepper_for, Duplicated(box, dbox), scheme, tsteps)
+    return box.out_now[1], dbox.in_old
 end
 
 function timestepper_while(box::Box, scheme::Scheme, tsteps::Int)
@@ -179,8 +180,9 @@ function box_while(scheme::Scheme, tsteps::Int)
 
     # Create object from struct. tsteps is not needed for a for-loop
     box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
+    dbox = Box(zeros(6), zeros(6), zeros(6), zeros(6), 0)
 
     # Compute gradient
-    g = Zygote.gradient(timestepper_while, box, scheme, tsteps)
-    return box.out_now[1], g[1]
+    autodiff(Enzyme.ReverseWithPrimal, timestepper_while, Duplicated(box, dbox), scheme, tsteps)
+    return box.out_now[1], dbox.in_old
 end

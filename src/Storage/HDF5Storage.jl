@@ -1,3 +1,9 @@
+"""
+    HDF5Storage
+
+A storage type for checkpointing that uses HDF5 files to store the checkpoints.
+
+"""
 mutable struct HDF5Storage{MT} <: AbstractStorage where {MT}
     fid::HDF5.File
     filename::String

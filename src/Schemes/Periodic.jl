@@ -54,18 +54,19 @@ function forwardcount(periodic::Periodic)
     end
 end
 
-function checkpoint_struct_for(
+function rev_checkpoint_struct_for(
     body::Function,
     alg::Periodic,
     model_input::MT,
     shadowmodel::MT,
-    range::Function
+    range
 ) where{MT}
     model = deepcopy(model_input)
     model_final = []
     model_check_outer = alg.storage
     model_check_inner = Array{MT}(undef, alg.period)
     check = 0
+    GC.enable(false)
     for i = 1:alg.acp
         model_check_outer[i] = deepcopy(model)
         for j= (i-1)*alg.period: (i)*alg.period-1
@@ -82,7 +83,9 @@ function checkpoint_struct_for(
         for j= alg.period:-1:1
             model = deepcopy(model_check_inner[j])
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            GC.gc()
         end
     end
+    GC.enable(true)
     return model_final
 end
