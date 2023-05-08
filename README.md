@@ -1,13 +1,27 @@
 # Checkpointing
 [![][build-stable-img]][build-url] [![][docs-stable-img]][docs-stable-url] [![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
 
-This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
+This package provides checkpointing schemes, storage methods, and
+differentiation rules interfaces for adjoint computations using automatic
+differentiation (AD) of time-stepping loops. Currently, we support the macro
+`@checkpoint_struct`, which differentiates and checkpoints a struct used in a
+for or while loop. Each loop iteration is differentiated using
+[Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on
+[ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) and
+[EnzymeRules.jl](https://enzymead.github.io/Enzyme.jl/dev/generated/custom_rule/)
+to integrate with AD tools applied to the code outside of the loop.
 
-The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package provides the following checkpointing schemes:
+The following checkpointing schemes are currently supported:
 
-1. Revolve/Binomial checkpointing [1]
-2. Periodic checkpointing
-3. Online r=2 checkpointing for while loops with a priori unknown number of iterations [2]
+1. Revolve/Binomial checkpointing [1],
+2. Periodic checkpointing,
+3. Online r=2 checkpointing for a while loop with a priori unknown number of iterations [2].
+
+In addition, the user has the choice of two storage types for the checkpoints:
+
+1. `ArrayStorage`: Stores the checkpoints in an array,
+2. `HDF5Storage`: Stores the checkpoints in an HDF5 for large checkpoints on disk.
+
 
 ## Installation
 
@@ -17,7 +31,17 @@ add Checkpointing
 
 ## Usage: Example 1D heat equation
 
-We present an example code where Zygote is used to differentiate the implementation of the explicit 1D heat equation. The macro `@checkpointing_struct` covers the transformation of `for` loops with `1:tsteps` ranges where `tsteps=500` is the number of timesteps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
+We present an example code where Zygote is used to differentiate the
+implementation of the explicit 1D heat equation. Note that the same example
+works with Enzyme's differentiation of the outer loop code. For a more complex
+example, please refer to the implementation of the adjoint
+[Burgers](https://github.com/DJ4Earth/Burgers.jl) equation using
+Checkpointing.jl. The macro `@checkpointing_struct` covers the transformation of
+`for` loops with `1:tsteps` ranges where `tsteps=500` is the number of time
+steps. As a checkpointing scheme, we use Revolve and a maximum of only 4
+snapshots. Instead of requiring to save all 500 temperature fields for the
+gradient computation, we now only need 4. As a trade-off, we recompute
+intermediate temperature fields.
 
 ```julia
 # Explicit 1D heat equation
@@ -45,8 +69,8 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat, chkpt::Scheme)
-    @checkpoint_struct revolve heat for i in 1:tsteps
+function sumheat(heat::Heat, scheme::Scheme)
+    @checkpoint_struct scheme heat for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -86,11 +110,14 @@ plot(g[1].Tnext[2:end-1])
 
 The following features are planned for development:
 
-* Online checkpointing schemes for adaptive timestepping
-* Composition of checkpointing schemes
-* Multi-level checkpointing schemes
+* Composition of checkpointing schemes,
+* Multi-level checkpointing schemes,
+* Storage for GPU memory checkpointing.
 
-[1] Andreas Griewank and Andrea Walther, Algorithm 799: Revolve: An Implementation of Checkpointing for the Reverse or Adjoint Mode of Computational Differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI: [10.1145/347837.347846](https://doi.org/10.1145/347837.347846)
+[1] Andreas Griewank and Andrea Walther, Algorithm 799: Revolve: An
+Implementation of Checkpointing for the Reverse or Adjoint Mode of Computational
+Differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI:
+[10.1145/347837.347846](https://doi.org/10.1145/347837.347846)
 
 [2] Philipp Stumm and Andrea Walther, New Algorithms for Optimal Online Checkpointing, 2010, DOI: [10.1137/080742439](https://doi.org/10.1137/080742439)
 
