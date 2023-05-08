@@ -1,13 +1,16 @@
-# This provides the functionality of online checkpointing.
-# It is based on an implementation of the Online_r2 algorithm from:
-#   Philipp Stumm and Andrea Walther. 2010. New Algorithms for
-#   Optimal Online Checkpointing. SIAM J. Sci. Comput. 32, 2
-#   (March 2010), 836–854. https://doi.org/10.1137/080742439
-# It is, furthermore, a Julia translation of the original C++
-# code distributed by the PyRevolve project:
-#   https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
-# TODO: Extend Online_r2 to Online_r3
+"""
+    Online_r2
 
+This provides the functionality of online checkpointing.
+It is based on an implementation of the Online_r2 algorithm from:
+Philipp Stumm and Andrea Walther. 2010. New Algorithms for
+Optimal Online Checkpointing. SIAM J. Sci. Comput. 32, 2
+(March 2010), 836–854. https://doi.org/10.1137/080742439
+It is, furthermore, a Julia translation of the original C++
+code distributed by the PyRevolve project:
+https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
+TODO: Extend Online_r2 to Online_r3
+"""
 mutable struct Online_r2{MT} <: Scheme where {MT}
 	check::Int
 	capo::Int

@@ -13,6 +13,7 @@ CurrentModule = Checkpointing
 ```@docs
 Revolve
 Periodic
+Online_r2
 
 ```
 
