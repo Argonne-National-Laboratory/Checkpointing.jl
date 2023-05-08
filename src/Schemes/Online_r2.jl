@@ -10,6 +10,7 @@ It is, furthermore, a Julia translation of the original C++
 code distributed by the PyRevolve project:
 https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
 TODO: Extend Online_r2 to Online_r3
+
 """
 mutable struct Online_r2{MT} <: Scheme where {MT}
 	check::Int
