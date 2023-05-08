@@ -8,15 +8,18 @@ CurrentModule = Checkpointing
 @checkpoint_struct
 
 ```
-## Function API
-```@docs
-checkpoint_struct
-```
 
 ## Supported Schemes
 ```@docs
 Revolve
 Periodic
+
+```
+
+## Supported Storages
+```@docs
+ArrayStorage
+HDF5Storage
 
 ```
 

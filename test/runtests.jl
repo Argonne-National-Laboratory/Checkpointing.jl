@@ -3,9 +3,8 @@ using Checkpointing
 using LinearAlgebra
 using DataStructures
 # All tested AD tools
-using ForwardDiff, ReverseDiff, Zygote, Enzyme
-# Include all the AD tool interfaces through `jacobian()`
-include("../examples/adtools.jl")
+using Zygote, Enzyme
+adtools = ["zygote", "enzyme"]
 
 @testset "Testing Checkpointing.jl" begin
     @testset "Testing Enzyme..." begin
@@ -26,89 +25,8 @@ include("../examples/adtools.jl")
         @test revolve.numinv == 177
     end
 
-    @testset "Testing Jacobian interface..." begin
-        include("jacobian.jl")
-    end
-    @testset "Test optcontrol deprecated" begin
-        @testset "AD Tool $adtool" for adtool in [EnzymeADTool(), ForwardDiffADTool(), ReverseDiffADTool(), ZygoteADTool()]
-            @testset "Testing Revolve..." begin
-                include("../examples/deprecated/optcontrol.jl")
-                global steps = 100
-                global snaps = 3
-                global info = 0
-
-                function store(F_H, F_C,t, i)
-                    F_C[1,i] = F_H[1]
-                    F_C[2,i] = F_H[2]
-                    F_C[3,i] = t
-                    return
-                end
-
-                function restore(F_C, i)
-                    F_H = [F_C[1,i], F_C[2,i]]
-                    t = F_C[3,i]
-                    return F_H, t
-                end
-                revolve = Revolve{Nothing}(steps, snaps, store, restore; verbose=info)
-                F_opt, F_final, L_opt, L = optcontrol(revolve, steps, adtool)
-                @test isapprox(F_opt, F_final, rtol=1e-4)
-                @test isapprox(L_opt, L, rtol=1e-4)
-            end
-
-
-            @testset "Testing Periodic..." begin
-                include("../examples/deprecated/optcontrol.jl")
-                global steps = 100
-                global snaps = 4
-                global info = 0
-
-                function store(F_H, F_C,t, i)
-                    F_C[1,i] = F_H[1]
-                    F_C[2,i] = F_H[2]
-                    F_C[3,i] = t
-                    return
-                end
-
-                function restore(F_C, i)
-                    F_H = [F_C[1,i], F_C[2,i]]
-                    t = F_C[3,i]
-                    return F_H, t
-                end
-                periodic = Periodic{Nothing}(steps, snaps, store, restore; verbose=info)
-                F_opt, F_final, L_opt, L = optcontrol(periodic, steps, adtool)
-                @test isapprox(F_opt, F_final, rtol=1e-4)
-                @test isapprox(L_opt, L, rtol=1e-4)
-            end
-
-            @testset "Testing Online_r2..." begin
-                include("../examples/optcontrolwhile.jl")
-                # Enzyme segfaults if the garbage collector is enabled
-                global steps = 100
-                global snaps = 20
-                global info = 0
-
-                function store(F_H, F_C,t, i)
-                    F_C[1,i] = F_H[1]
-                    F_C[2,i] = F_H[2]
-                    F_C[3,i] = t
-                    return
-                end
-
-                function restore(F_C, i)
-                    F_H = [F_C[1,i], F_C[2,i]]
-                    t = F_C[3,i]
-                    return F_H, t
-                end
-                online = Online_r2{Nothing}(snaps, store, restore)
-                F_opt, F_final, L_opt, L = optcontrolwhile(online, steps, adtool)
-                @test isapprox(F_opt, F_final, rtol=1e-4)
-                @test isapprox(L_opt, L, rtol=1e-4)
-            end
-        end
-    end
-
-    @testset "Test optcontrol" begin
-        include("../examples/optcontrol.jl")
+    @testset "Test optcontrol with $adtool" for adtool in adtools
+        include("../examples/optcontrol_$(adtool).jl")
         @testset "Testing Revolve..." begin
             steps = 100
             snaps = 3
@@ -131,8 +49,8 @@ include("../examples/adtools.jl")
             @test isapprox(L_opt, L, rtol=1e-4)
         end
     end
-    @testset "Test heat example" begin
-        include("../examples/heat.jl")
+    @testset "Test heat example with $adtool" for adtool in adtools
+        include("../examples/heat_$(adtool).jl")
         @testset "Testing Revolve..." begin
             steps = 500
             snaps = 4
@@ -168,8 +86,8 @@ include("../examples/adtools.jl")
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
     end
-    @testset "Test HDF5 storage using heat example" begin
-        include("../examples/heat.jl")
+    @testset "Test HDF5 storage using heat example with $adtool" for adtool in adtools
+        include("../examples/heat_$adtool.jl")
         @testset "Testing Revolve..." begin
             steps = 500
             snaps = 4
@@ -205,8 +123,8 @@ include("../examples/adtools.jl")
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
     end
-    @testset "Test box model example" begin
-        include("../examples/box_model.jl")
+    @testset "Test box model example with $(adtool)" for adtool in adtools
+        include("../examples/box_model_$(adtool).jl")
 
         @testset "Testing Revolve..." begin
             steps = 10000
@@ -216,11 +134,11 @@ include("../examples/adtools.jl")
             revolve = Revolve{Box}(steps, snaps; verbose=info)
             T, dT = box_for(revolve, steps)
             @test isapprox(T, 21.41890316892692)
-            @test isapprox(dT[2][5], 0.00616139595759519)
+            @test isapprox(dT[5], 0.00616139595759519)
 
         end
 
-        @testset "Testing All Enzyme..." begin
+        @testset "Testing Periodic..." begin
             steps = 10000
             snaps = 100
             info = 0
@@ -228,7 +146,7 @@ include("../examples/adtools.jl")
             periodic = Periodic{Box}(steps, snaps; verbose=info)
             T, dT = box_for(periodic, steps)
             @test isapprox(T, 21.41890316892692)
-            @test isapprox(dT[2][5], 0.00616139595759519)
+            @test isapprox(dT[5], 0.00616139595759519)
         end
 
         @testset "Testing Online_r2..." begin
@@ -238,7 +156,7 @@ include("../examples/adtools.jl")
             online = Online_r2{Box}(snaps; verbose=info)
             T, dT = box_while(online, steps)
             @test isapprox(T, 21.41890316892692)
-            @test isapprox(dT[2][5], 0.00616139595759519)
+            @test isapprox(dT[5], 0.00616139595759519)
         end
     end
 end

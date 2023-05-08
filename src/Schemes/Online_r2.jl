@@ -350,7 +350,7 @@ function next_action!(online::Online_r2)::Action
     return Action(err, online.capo, online.oldcapo, -1)
 end
 
-function checkpoint_struct_while(
+function rev_checkpoint_struct_while(
     body::Function,
     alg::Online_r2,
     model_input::MT,

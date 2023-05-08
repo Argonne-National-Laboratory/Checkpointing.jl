@@ -82,9 +82,9 @@ function Revolve{MT}(
         if predfwdcnt == -1
             error("Revolve: error returned by  revolve::forwardcount")
         else
-            @info "prediction:"
-            @info " overhead forward steps : $predfwdcnt"
-            @info " overhead factor        : $(predfwdcnt/steps)"
+            @info "Prediction:"
+            @info "Forward steps   : $(Int(predfwdcnt))"
+            @info "Overhead factor : $(predfwdcnt/(steps+1))"
         end
     end
     return revolve
@@ -119,11 +119,11 @@ function next_action!(revolve::Revolve)::Action
             # we are done
             revolve.rwcp = revolve.rwcp - 1
             if revolve.verbose > 2
-                @info "done"
+                @info "Done"
             end
             if revolve.verbose > 0
-                @info "summary:"
-                @info " overhead forward steps: $(revolve.numfwd)"
+                @info "Summary:"
+                @info " Forward steps: $(revolve.numfwd)"
                 @info " CP stores             : $(revolve.numstore)"
                 @info " NextAction calls      : $(revolve.numinv)"
             end
@@ -364,7 +364,7 @@ function forwardcount(revolve::Revolve)
     return ret
 end
 
-function reset(revolve::Revolve)
+function reset!(revolve::Revolve)
     revolve.cstart = 0
     revolve.tail   = 1
     if revolve.bundle > 1
@@ -382,9 +382,10 @@ function reset(revolve::Revolve)
     revolve.rwcp            = -1
     revolve.prevcend        = 0
     revolve.firstuturned    = false
+    return nothing
 end
 
-function checkpoint_struct_for(
+function rev_checkpoint_struct_for(
     body::Function,
     alg::Revolve,
     model_input::MT,

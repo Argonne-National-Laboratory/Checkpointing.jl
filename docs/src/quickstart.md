@@ -27,8 +27,8 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat, chkpt::Scheme)
-    @checkpoint_struct revolve heat for i in 1:tsteps
+function sumheat(heat::Heat, scheme::Scheme)
+    @checkpoint_struct scheme heat for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
