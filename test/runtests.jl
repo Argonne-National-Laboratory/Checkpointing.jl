@@ -6,14 +6,14 @@ using DataStructures
 using Zygote, Enzyme
 adtools = ["zygote", "enzyme"]
 
-@testset "Testing Checkpointing.jl" begin
-    @testset "Testing Enzyme..." begin
+@testset "Checkpointing.jl" begin
+    @testset "Enzyme..." begin
         include("speelpenning.jl")
         errf, errg = main()
         @test isapprox(errf, 0.0; atol = 1e-15)
         @test isapprox(errg, 0.0; atol = 1e-15)
     end
-    @testset "Testing Revolve..." begin
+    @testset "Revolve..." begin
         global steps = 50
         global checkpoints = 7
         global verbose = 0
@@ -27,7 +27,7 @@ adtools = ["zygote", "enzyme"]
 
     @testset "Test optcontrol with $adtool" for adtool in adtools
         include("../examples/optcontrol_$(adtool).jl")
-        @testset "Testing Revolve..." begin
+        @testset "Revolve..." begin
             steps = 100
             snaps = 3
             info = 0
@@ -38,7 +38,7 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(L_opt, L, rtol=1e-4)
         end
 
-        @testset "Testing Periodic..." begin
+        @testset "Periodic..." begin
             steps = 100
             snaps = 4
             info = 0
@@ -51,7 +51,7 @@ adtools = ["zygote", "enzyme"]
     end
     @testset "Test heat example with $adtool" for adtool in adtools
         include("../examples/heat_$(adtool).jl")
-        @testset "Testing Revolve..." begin
+        @testset "Revolve..." begin
             steps = 500
             snaps = 4
             info = 0
@@ -63,7 +63,7 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
 
-        @testset "Testing Periodic..." begin
+        @testset "Periodic..." begin
             steps = 500
             snaps = 4
             info = 0
@@ -75,7 +75,7 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
 
-        @testset "Testing Online_r2..." begin
+        @testset "Online_r2..." begin
             steps = 500
             snaps = 100
             info = 0
@@ -88,7 +88,7 @@ adtools = ["zygote", "enzyme"]
     end
     @testset "Test HDF5 storage using heat example with $adtool" for adtool in adtools
         include("../examples/heat_$adtool.jl")
-        @testset "Testing Revolve..." begin
+        @testset "Revolve..." begin
             steps = 500
             snaps = 4
             info = 0
@@ -100,7 +100,7 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
 
-        @testset "Testing Periodic..." begin
+        @testset "Periodic..." begin
             steps = 500
             snaps = 4
             info = 0
@@ -112,7 +112,7 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
         end
 
-        @testset "Testing Online_r2..." begin
+        @testset "Online_r2..." begin
             steps = 500
             snaps = 100
             info = 0
@@ -126,7 +126,7 @@ adtools = ["zygote", "enzyme"]
     @testset "Test box model example with $(adtool)" for adtool in adtools
         include("../examples/box_model_$(adtool).jl")
 
-        @testset "Testing Revolve..." begin
+        @testset "Revolve..." begin
             steps = 10000
             snaps = 100
             info = 0
@@ -138,7 +138,7 @@ adtools = ["zygote", "enzyme"]
 
         end
 
-        @testset "Testing Periodic..." begin
+        @testset "Periodic..." begin
             steps = 10000
             snaps = 100
             info = 0
@@ -149,7 +149,7 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(dT[5], 0.00616139595759519)
         end
 
-        @testset "Testing Online_r2..." begin
+        @testset "Online_r2..." begin
             steps = 10000
             snaps = 500
             info = 0
@@ -158,5 +158,8 @@ adtools = ["zygote", "enzyme"]
             @test isapprox(T, 21.41890316892692)
             @test isapprox(dT[5], 0.00616139595759519)
         end
+    end
+    @testset "Multilevel" begin
+        include("multilevel.jl")
     end
 end
