@@ -128,7 +128,7 @@ function set_zero!(nestedmodel::MT) where {MT}
 end
 
 function checkpoint_struct_for(body::Function, scheme::Scheme, model, range)
-    for i in range
+    for gensym() in range
         body(model)
     end
     return model
@@ -159,10 +159,22 @@ adjoints and is created here.  It is supposed to be initialized by ChainRules.
 """
 macro checkpoint_struct(alg, model, loop)
     if loop.head == :for
+        body     = loop.args[2]
+        iterator = loop.args[1].args[1]
+        from     = loop.args[1].args[2].args[2]
+        to       = loop.args[1].args[2].args[3]
+        range    = loop.args[1].args[2]
         ex = quote
-            $model = Checkpointing.checkpoint_struct_for($alg, $model, $(loop.args[1])) do $model
-                $(loop.args[2])
-                nothing
+            let
+                if !isa($range, UnitRange{Int64})
+                    error("Checkpointing.jl: Only UnitRange{Int64} is supported.")
+                end
+                $iterator = $from
+                $model = Checkpointing.checkpoint_struct_for($alg, $model, $(loop.args[1].args[2])) do $model
+                    $body
+                    $iterator += 1
+                    nothing
+                end
             end
         end
     elseif loop.head == :while
