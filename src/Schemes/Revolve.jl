@@ -25,6 +25,7 @@ mutable struct Revolve{MT} <: Scheme where {MT}
     frestore::Union{Function,Nothing}
     storage::AbstractStorage
     gc::Bool
+    write_checkpoints::Bool
 end
 
 function Revolve{MT}(
@@ -36,7 +37,8 @@ function Revolve{MT}(
     anActionInstance::Union{Nothing,Action} = nothing,
     bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0,
-    gc::Bool = true
+    gc::Bool = true,
+    write_checkpoints::Bool = false
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
@@ -80,7 +82,8 @@ function Revolve{MT}(
     revolve = Revolve{MT}(
         steps, bundle, tail, acp, cstart, cend, numfwd,
         numinv, numstore, rwcp, prevcend, firstuturned,
-        stepof, verbose, fstore, frestore, storage, gc
+        stepof, verbose, fstore, frestore, storage, gc,
+        write_checkpoints
     )
 
     if verbose > 0
@@ -407,6 +410,10 @@ function rev_checkpoint_struct_for(
     if !alg.gc
         GC.enable(false)
     end
+    if alg.write_checkpoints
+        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_chkp.h5")
+        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_chkp.h5")
+    end
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
@@ -420,16 +427,28 @@ function rev_checkpoint_struct_for(
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
             model_final =  deepcopy(model)
+            if alg.write_checkpoints
+                prim_output[check] = model_final
+            end
             if alg.verbose > 0
                 @info "Revolve: First Uturn"
                 @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            if alg.write_checkpoints
+                adj_output[check] = shadowmodel
+            end
             if !alg.gc
                 GC.gc()
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
+            if alg.write_checkpoints
+                prim_output[check] = model
+            end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            if alg.write_checkpoints
+                adj_output[check] = shadowmodel
+            end
             if !alg.gc
                 GC.gc()
             end
@@ -447,6 +466,8 @@ function rev_checkpoint_struct_for(
             break
         end
     end
-    GC.enable(true)
+    if !alg.gc
+        GC.enable(true)
+    end
     return model_final
 end
