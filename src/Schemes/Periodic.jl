@@ -17,6 +17,8 @@ mutable struct Periodic{MT} <: Scheme where {MT}
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
     storage::AbstractStorage
+    gc::Bool
+    write_checkpoints::Bool
 end
 
 function Periodic{MT}(
@@ -27,7 +29,9 @@ function Periodic{MT}(
     storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
     anActionInstance::Union{Nothing,Action} = nothing,
     bundle_::Union{Nothing,Int} = nothing,
-    verbose::Int = 0
+    verbose::Int = 0,
+    gc::Bool = true,
+    write_checkpoints::Bool = false
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
@@ -38,7 +42,11 @@ function Periodic{MT}(
     acp             = checkpoints
     period          = div(steps, checkpoints)
 
-    periodic = Periodic{MT}(steps, acp, period, verbose, fstore, frestore, storage)
+    periodic = Periodic{MT}(
+        steps, acp, period,verbose,
+        fstore, frestore, storage, gc,
+        write_checkpoints
+    )
 
     forwardcount(periodic)
     return periodic
@@ -66,7 +74,13 @@ function rev_checkpoint_struct_for(
     model_check_outer = alg.storage
     model_check_inner = Array{MT}(undef, alg.period)
     check = 0
-    GC.enable(false)
+    if !alg.gc
+        GC.enable(false)
+    end
+    if alg.write_checkpoints
+        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_chkp.h5")
+        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_chkp.h5")
+    end
     for i = 1:alg.acp
         model_check_outer[i] = deepcopy(model)
         for j= (i-1)*alg.period: (i)*alg.period-1
@@ -81,11 +95,21 @@ function rev_checkpoint_struct_for(
             body(model)
         end
         for j= alg.period:-1:1
+            if alg.write_checkpoints
+                prim_output[check] = model
+            end
             model = deepcopy(model_check_inner[j])
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
-            GC.gc()
+            if alg.write_checkpoints
+                adj_output[check] = shadowmodel
+            end
+            if !alg.gc
+                GC.gc()
+            end
         end
     end
-    GC.enable(true)
+    if !alg.gc
+        GC.enable(true)
+    end
     return model_final
 end
