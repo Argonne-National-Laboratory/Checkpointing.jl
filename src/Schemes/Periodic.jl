@@ -96,12 +96,12 @@ function rev_checkpoint_struct_for(
         end
         for j= alg.period:-1:1
             if alg.write_checkpoints
-                prim_output[check] = model
+                prim_output[j] = model
             end
             model = deepcopy(model_check_inner[j])
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
             if alg.write_checkpoints
-                adj_output[check] = shadowmodel
+                adj_output[j] = shadowmodel
             end
             if !alg.gc
                 GC.gc()
