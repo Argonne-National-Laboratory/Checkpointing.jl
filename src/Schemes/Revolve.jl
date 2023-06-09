@@ -24,6 +24,7 @@ mutable struct Revolve{MT} <: Scheme where {MT}
     fstore::Union{Function,Nothing}
     frestore::Union{Function,Nothing}
     storage::AbstractStorage
+    gc::Bool
 end
 
 function Revolve{MT}(
@@ -34,13 +35,18 @@ function Revolve{MT}(
     storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
     anActionInstance::Union{Nothing,Action} = nothing,
     bundle_::Union{Nothing,Int} = nothing,
-    verbose::Int = 0
+    verbose::Int = 0,
+    gc::Bool = true
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
         anActionInstance.iteration  = 0
         anActionInstance.cpNum      = 0
+    end
+    if verbose > 0
+        @info "Revolve: Number of checkpoints: $checkpoints"
+        @info "Revolve: Number of steps: $steps"
     end
     !isa(bundle_, Nothing) ? bundle = bundle_ : bundle = 1
     if bundle < 1 || bundle > steps
@@ -74,7 +80,7 @@ function Revolve{MT}(
     revolve = Revolve{MT}(
         steps, bundle, tail, acp, cstart, cend, numfwd,
         numinv, numstore, rwcp, prevcend, firstuturned,
-        stepof, verbose, fstore, frestore, storage
+        stepof, verbose, fstore, frestore, storage, gc
     )
 
     if verbose > 0
@@ -393,11 +399,14 @@ function rev_checkpoint_struct_for(
     range
 ) where {MT}
     model = deepcopy(model_input)
+    @info "Size per checkpoint: $(Base.format_bytes(Base.summarysize(model)))"
     storemap = Dict{Int32,Int32}()
     check = 0
     model_check = alg.storage
     model_final = []
-    GC.enable(false)
+    if !alg.gc
+        GC.enable(false)
+    end
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
@@ -411,11 +420,19 @@ function rev_checkpoint_struct_for(
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
             model_final =  deepcopy(model)
+            if alg.verbose > 0
+                @info "Revolve: First Uturn"
+                @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
+            end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
-            GC.gc()
+            if !alg.gc
+                GC.gc()
+            end
         elseif (next_action.actionflag == Checkpointing.uturn)
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
-            GC.gc()
+            if !alg.gc
+                GC.gc()
+            end
             if haskey(storemap,next_action.iteration-1-1)
                 delete!(storemap,next_action.iteration-1-1)
                 check=check-1
