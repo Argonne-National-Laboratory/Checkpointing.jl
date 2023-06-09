@@ -414,6 +414,7 @@ function rev_checkpoint_struct_for(
         prim_output = HDF5Storage{MT}(alg.steps; filename="primal_chkp.h5")
         adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_chkp.h5")
     end
+    step = alg.steps
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
@@ -428,7 +429,7 @@ function rev_checkpoint_struct_for(
             body(model)
             model_final =  deepcopy(model)
             if alg.write_checkpoints
-                prim_output[check] = model_final
+                prim_output[step] = model_final
             end
             if alg.verbose > 0
                 @info "Revolve: First Uturn"
@@ -436,19 +437,21 @@ function rev_checkpoint_struct_for(
             end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
             if alg.write_checkpoints
-                adj_output[check] = shadowmodel
+                adj_output[step] = shadowmodel
             end
+            step -= 1
             if !alg.gc
                 GC.gc()
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
             if alg.write_checkpoints
-                prim_output[check] = model
+                prim_output[step] = model
             end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
             if alg.write_checkpoints
-                adj_output[check] = shadowmodel
+                adj_output[step] = shadowmodel
             end
+            step -= 1
             if !alg.gc
                 GC.gc()
             end
