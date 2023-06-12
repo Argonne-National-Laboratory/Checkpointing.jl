@@ -3,9 +3,10 @@
 # Explicit 1D heat equation
 
 ```@example heat
-using Checkpointing
+# Explicit 1D heat equation
 using Plots
-using Zygote
+using Checkpointing
+using Enzyme
 
 mutable struct Heat
     Tnext::Vector{Float64}
@@ -27,44 +28,45 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat, scheme::Scheme)
-    @checkpoint_struct scheme heat for i in 1:tsteps
+function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+    # AD: Create shadow copy for derivatives
+    @checkpoint_struct chkpscheme heat for i in 1:tsteps
+    # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
     return reduce(+, heat.Tnext)
 end
 
-n = 100
-Δx=0.1
-Δt=0.001
-# Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
-λ = 0.5
-# time steps
-tsteps = 500
+function heat(scheme::Scheme, tsteps::Int)
+    n = 100
+    Δx=0.1
+    Δt=0.001
+    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+    λ = 0.5
 
-# Create object from struct
-heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+    # Create object from struct. tsteps is not needed for a for-loop
+    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+    # Shadow copy for Enzyme
+    dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
-# Boundary conditions
-heat.Tnext[1]   = 20.0
-heat.Tnext[end] = 0
+    # Boundary conditions
+    heat.Tnext[1]   = 20.0
+    heat.Tnext[end] = 0
 
-# Set up AD
-# Number of available snapshots
-snaps = 4
-verbose = 0
-revolve = Revolve{Heat}(tsteps, snaps; verbose=verbose)
+    # Compute gradient
+    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), scheme, tsteps)
 
-# Compute gradient
-g = Zygote.gradient(sumheat, heat, revolve)
+    return heat.Tnext, dheat.Tnext[2:end-1]
+end
 ```
 
 Plot function values:
 ```@example heat
-plot(heat.Tnext)
+tsteps = 500
+T, dT = heat(Revolve{Heat}(tsteps,4), tsteps)
 ```
 Plot gradient with respect to sum(T):
 ```@example heat
-plot(g[1].Tnext[2:end-1])
+plot(dT)
 ```

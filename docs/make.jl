@@ -22,9 +22,10 @@ makedocs(
     pages = [
         "Home" => "index.md",
         "Quick Start" => "quickstart.md",
-        "Library" => [
-        "Checkpointing" => "lib/checkpointing.md",
-        ],
+        "Schemes" => "schemes.md",
+        "Rules" => "rules.md",
+        "Storage" => "storage.md",
+        "API" => "lib/checkpointing.md",
     ]
 )
 

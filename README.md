@@ -1,29 +1,40 @@
 # Checkpointing
 [![][build-stable-img]][build-url] [![][docs-stable-img]][docs-stable-url] [![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
 
-This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
+This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in a while or for the loop with a `UnitRange`.
 
-The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package provides the following checkpointing schemes:
+Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on external differentiation rule systems to integrate with AD tools applied to the code outside of the loop.
 
-1. Revolve/Binomial checkpointing [1]
-2. Periodic checkpointing
-3. Online r=2 checkpointing for while loops with a priori unknown number of iterations [2]
+The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package supports:
+
+## Scheme
+* Revolve/Binomial checkpointing [1]
+* Periodic checkpointing
+* Online r=2 checkpointing for while loops with a priori unknown number of iterations [2]
+
+## Rules
+* [ChainRulesCore.jl](https://juliadiff.org/ChainRulesCore.jl/stable/)
+* [EnzymeRules.jl](https://enzyme.mit.edu/julia/stable/generated/custom_rule/)
+
+## Storage
+* ArrayStorage: Stores all checkpoints values in an array of type `Array`
+* HDF5Storage: Stores all checkpoints values in an HDF5 file
 
 ## Installation
 
 ```julia
-add Checkpointing
+] add Checkpointing
 ```
 
 ## Usage: Example 1D heat equation
 
-We present an example code where Zygote is used to differentiate the implementation of the explicit 1D heat equation. The macro `@checkpointing_struct` covers the transformation of `for` loops with `1:tsteps` ranges where `tsteps=500` is the number of timesteps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
+We present an example of a differentiated explicit 1D heat equation. Notice that the heat equation is a linear differential equation and does not require adjoint checkpointing. This example only illustrates the Checkpointing.jl API. The macro `@checkpointing_struct` covers the transformation of `for` loops with `UnitRange` ranges where `tsteps=500` is the number of time steps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
 
 ```julia
 # Explicit 1D heat equation
 using Checkpointing
+using Enzyme
 using Plots
-using Zygote
 
 mutable struct Heat
     Tnext::Vector{Float64}
@@ -45,50 +56,49 @@ function advance(heat)
 end
 
 
-function sumheat(heat::Heat, chkpt::Scheme)
-    @checkpoint_struct revolve heat for i in 1:tsteps
+function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+    # AD: Create shadow copy for derivatives
+    @checkpoint_struct chkpscheme heat for i in 1:tsteps
+    # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
     return reduce(+, heat.Tnext)
 end
 
-n = 100
-Δx=0.1
-Δt=0.001
-# Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
-λ = 0.5
-# time steps
+function heat(scheme::Scheme, tsteps::Int)
+    n = 100
+    Δx=0.1
+    Δt=0.001
+    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+    λ = 0.5
+
+    # Create object from struct. tsteps is not needed for a for-loop
+    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+    # Shadow copy for Enzyme
+    dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+
+    # Boundary conditions
+    heat.Tnext[1]   = 20.0
+    heat.Tnext[end] = 0
+
+    # Compute gradient
+    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), scheme, tsteps)
+
+    return heat.Tnext, dheat.Tnext[2:end-1]
+end
 tsteps = 500
-
-# Create object from struct
-heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
-
-# Boundary conditions
-heat.Tnext[1]   = 20.0
-heat.Tnext[end] = 0
-
-# Set up AD
-# Number of available snapshots
-snaps = 4
-verbose = 0
-revolve = Revolve{Heat}(tsteps, snaps; verbose=verbose)
-
-# Compute gradient
-g = Zygote.gradient(sumheat, heat, revolve)
-
+T, dT = heat(Revolve{Heat}(tsteps,4), tsteps)
 # Plot function values
-plot(heat.Tnext)
-# Plot gradient with respect to sum(T).
-plot(g[1].Tnext[2:end-1])
+plot(T)
+# Plot gradient with respect of sum(T[end]) with respect to T[1].
+plot(dT)
 ```
 ## Future
 
 The following features are planned for development:
 
-* Online checkpointing schemes for adaptive timestepping
-* Composition of checkpointing schemes
-* Multi-level checkpointing schemes
+* Support checkpoints on GPUs
 
 [1] Andreas Griewank and Andrea Walther, Algorithm 799: Revolve: An Implementation of Checkpointing for the Reverse or Adjoint Mode of Computational Differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI: [10.1145/347837.347846](https://doi.org/10.1145/347837.347846)
 
