@@ -1,7 +1,7 @@
 ```@meta
 CurrentModule = Checkpointing
 ```
-# Checkpointing
+# API
 
 ## Decorator macros for loops
 ```@docs

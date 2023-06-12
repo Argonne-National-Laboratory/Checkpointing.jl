@@ -1,19 +1,34 @@
 # Checkpointing
-[Checkpointing.jl](https://github.com/Argonne-National-Laboratory/Checkpointing.jl) provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time stepping loops. Currently, we support the macro @checkpoint_struct, which differentiates and checkpoints a struct used in the loop. Each loop iteration is differentiated using Enzyme.jl. We rely on ChainRulesCore.jl to integrate with AD tools applied to the code outside of the loop.
 
-The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package provides the following checkpointing schemes:
+[Checkpointing.jl](https://github.com/Argonne-National-Laboratory/Checkpointing.jl) provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in a while or for the loop with a `UnitRange`.
 
-* Online checkpointing schemes for adaptive timestepping
+Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
+
+The schemes are agnostic to the AD tool being used and can be easily interfaced with any Julia AD tool. Currently, the package supports:
+
+## Scheme
 * Revolve/Binomial checkpointing [1]
 * Periodic checkpointing
+* Online r=2 checkpointing for a while loops with a priori unknown number of iterations [2]
 
+## Rules
+* [ChainRulesCore.jl](https://juliadiff.org/ChainRulesCore.jl/stable/)
+* [EnzymeRules.jl](https://enzyme.mit.edu/julia/stable/generated/custom_rule/)
+
+## Storage
+* ArrayStorage: Stores all checkpoints values in an array of type `Array`
+* HDF5Storage: Stores all checkpoints values in an HDF5 file
+## Limitations
+* Currently, the package only supports `UnitRange` ranges in `for` loops. We will add range types on a per-need basis. Please, open an issue if you need support for a specific range type.
+* We only support Enzyme as the differentiation tool of the loop body. This is due to our strict requirement for a mutation-enabled AD tool in our projects. However, there is no fundamental reason why we could not support other AD tools. Please, open an issue if you need support for a specific AD tool.
+* We don't support any activity analysis. This implies that loop iterators have to be part of the checkpointed struct if they are used in the loop body. Currently, we store the entire struct at each checkpoint. This is not necessary, and we will add support for storing only the required fields in the future.
 ## Future
 The following features are planned for development:
 
-* Composition of checkpointing schemes
-* Multi-level checkpointing schemes
-
+* Support checkpoints on GPUs
 ## Quick Start
+
+
 
 ```@contents
 Pages = [
@@ -21,7 +36,7 @@ Pages = [
 ]
 Depth=1
 ```
-## Library
+## API
 ```@contents
 Pages = [
     "lib/checkpointing.md",
