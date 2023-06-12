@@ -26,6 +26,9 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 ] add Checkpointing
 ```
 
+## Related packages
+* [TreeverseAlgorithm.jl](https://github.com/GiggleLiu/TreeverseAlgorithm.jl): Visualization of the Revolve algorithm
+
 ## Usage: Example 1D heat equation
 
 We present an example of a differentiated explicit 1D heat equation. Notice that the heat equation is a linear differential equation and does not require adjoint checkpointing. This example only illustrates the Checkpointing.jl API. The macro `@checkpointing_struct` covers the transformation of `for` loops with `UnitRange` ranges where `tsteps=500` is the number of time steps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
