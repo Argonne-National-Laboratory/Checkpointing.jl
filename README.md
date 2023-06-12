@@ -28,6 +28,7 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 
 ## Related packages
 * [TreeverseAlgorithm.jl](https://github.com/GiggleLiu/TreeverseAlgorithm.jl): Visualization of the Revolve algorithm
+* [Burgers.jl](https://github.com/DJ4Earth/Burgers.jl): A showcase of checkpointing applied to an MPI parallelized 2D Burgers equation solver
 
 ## Usage: Example 1D heat equation
 
