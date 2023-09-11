@@ -15,7 +15,7 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 ChainRulesCore = "1"
 DataStructures = "0.18"
 Enzyme = "0.11"
-HDF5 = "0.16"
+HDF5 = "0.17"
 julia = "1.8"
 
 [extras]

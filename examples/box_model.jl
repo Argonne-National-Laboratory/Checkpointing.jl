@@ -148,7 +148,7 @@ function timestepper_for(box::Box, scheme::Scheme, tsteps::Int)
 end
 
 
-function box_for(scheme::Scheme, tsteps::Int)
+function box_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     Tbar = [20.0; 1.0; 1.0]
     Sbar = [35.5; 34.5; 34.5]
 
@@ -160,6 +160,19 @@ function box_for(scheme::Scheme, tsteps::Int)
     autodiff(Enzyme.ReverseWithPrimal, timestepper_for, Duplicated(box, dbox), scheme, tsteps)
     return box.out_now[1], dbox.in_old
 end
+
+function box_for(scheme::Scheme, tsteps::Int, ::ZygoteTool)
+    Tbar = [20.0; 1.0; 1.0]
+    Sbar = [35.5; 34.5; 34.5]
+
+    # Create object from struct. tsteps is not needed for a for-loop
+    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
+
+    # Compute gradient
+    g = Zygote.gradient(timestepper_for, box, scheme, tsteps)
+    return box.out_now[1], g[1][2]
+end
+
 
 function timestepper_while(box::Box, scheme::Scheme, tsteps::Int)
     box.i=1
@@ -174,7 +187,7 @@ function timestepper_while(box::Box, scheme::Scheme, tsteps::Int)
 end
 
 
-function box_while(scheme::Scheme, tsteps::Int)
+function box_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     Tbar = [20.0; 1.0; 1.0]
     Sbar = [35.5; 34.5; 34.5]
 
@@ -185,4 +198,16 @@ function box_while(scheme::Scheme, tsteps::Int)
     # Compute gradient
     autodiff(Enzyme.ReverseWithPrimal, timestepper_while, Duplicated(box, dbox), scheme, tsteps)
     return box.out_now[1], dbox.in_old
+end
+
+function box_while(scheme::Scheme, tsteps::Int, ::ZygoteTool)
+    Tbar = [20.0; 1.0; 1.0]
+    Sbar = [35.5; 34.5; 34.5]
+
+    # Create object from struct. tsteps is not needed for a for-loop
+    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
+
+    # Compute gradient
+    g = Zygote.gradient(timestepper_while, box, scheme, tsteps)
+    return box.out_now[1], g[1][2]
 end

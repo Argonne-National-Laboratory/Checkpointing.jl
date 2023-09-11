@@ -40,7 +40,7 @@ function header()
         return
 end
 
-function muoptcontrol(scheme, steps)
+function muoptcontrol(scheme, steps, ::EnzymeTool)
     println( "\n STEPS    -> number of time steps to perform")
     println("SNAPS    -> number of checkpoints")
     println("INFO = 1 -> calculate only approximate solution")
@@ -86,4 +86,46 @@ function muoptcontrol(scheme, steps)
     return F, L, F_opt, L_opt
 end
 
-# main(10,3,3)
+function muoptcontrol(scheme, steps, ::ZygoteTool)
+    println( "\n STEPS    -> number of time steps to perform")
+    println("SNAPS    -> number of checkpoints")
+    println("INFO = 1 -> calculate only approximate solution")
+    println("INFO = 2 -> calculate approximate solution + takeshots")
+    println("INFO = 3 -> calculate approximate solution + all information ")
+    println(" ENTER:   STEPS, SNAPS, INFO \n")
+
+
+    # F   : output
+    # F_H : input
+    # L   : seed the output adjoint
+    # L_H : set input adjoint to 0
+    F = [1.0, 0.0]
+    F_H = [0.0, 0.0]
+    t = 0.0
+    h = 1.0/steps
+    model = Model(F, F_H, t, h)
+
+    function foo(model::Model)
+        @checkpoint_struct scheme model for i in 1:steps
+            model.F_H .= model.F
+            advance(model)
+            model.t += h
+        end
+        return model.F[2]
+    end
+    g = Zygote.gradient(foo,model)
+
+    F = model.F
+    L = [g[1].F[1], g[1].F[2]]
+
+    F_opt = Array{Float64, 1}(undef, 2)
+    L_opt = Array{Float64, 1}(undef, 2)
+    opt_sol(F_opt,1.0)
+    opt_lambda(L_opt,0.0)
+    println("\n\n")
+    println("y_1*(1)  = " , F_opt[1] , " y_2*(1)  = " , F_opt[2])
+    println("y_1 (1)  = " , F[1] , "  y_2 (1)  = " , F[2] , " \n\n")
+    println("l_1*(0)  = " , L_opt[1] , "  l_2*(0)  = " , L_opt[2])
+    println("l_1 (0)  = " , L[1]     , "  sl_2 (0)  = " , L[2] , " ")
+    return F, L, F_opt, L_opt
+end

@@ -1,6 +1,6 @@
 # Explicit 1D heat equation
 using Checkpointing
-using Zygote
+using Enzyme
 
 mutable struct Heat
     Tnext::Vector{Float64}
@@ -10,7 +10,7 @@ mutable struct Heat
     tsteps::Int
 end
 
-function advance(heat)
+function advance(heat::Heat)
     next = heat.Tnext
     last = heat.Tlast
     λ = heat.λ
@@ -25,6 +25,7 @@ end
 function sumheat_for(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     # AD: Create shadow copy for derivatives
     @checkpoint_struct chkpscheme heat for i in 1:tsteps
+    # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -42,7 +43,29 @@ function sumheat_while(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     return reduce(+, heat.Tnext)
 end
 
-function heat_for(scheme::Scheme, tsteps::Int)
+function heat_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
+    n = 100
+    Δx=0.1
+    Δt=0.001
+    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+    λ = 0.5
+
+    # Create object from struct. tsteps is not needed for a for-loop
+    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+    # Shadow copy for Enzyme
+    dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+
+    # Boundary conditions
+    heat.Tnext[1]   = 20.0
+    heat.Tnext[end] = 0
+
+    # Compute gradient
+    autodiff(Enzyme.ReverseWithPrimal, sumheat_for, Duplicated(heat, dheat), scheme, tsteps)
+
+    return heat.Tnext, dheat.Tnext[2:end-1]
+end
+
+function heat_for(scheme::Scheme, tsteps::Int, ::ZygoteTool)
     n = 100
     Δx=0.1
     Δt=0.001
@@ -62,7 +85,29 @@ function heat_for(scheme::Scheme, tsteps::Int)
     return heat.Tnext, g[1].Tnext[2:end-1]
 end
 
-function heat_while(scheme::Scheme, tsteps::Int)
+function heat_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
+    n = 100
+    Δx=0.1
+    Δt=0.001
+    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
+    λ = 0.5
+
+    # Create object from struct. tsteps is not needed for a for-loop
+    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+    # Shadow copy for Enzyme
+    dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
+
+    # Boundary conditions
+    heat.Tnext[1]   = 20.0
+    heat.Tnext[end] = 0
+
+    # Compute gradient
+    autodiff(Enzyme.ReverseWithPrimal, sumheat_while, Duplicated(heat, dheat), scheme, tsteps)
+
+    return heat.Tnext, dheat.Tnext[2:end-1]
+end
+
+function heat_while(scheme::Scheme, tsteps::Int, ::ZygoteTool)
     n = 100
     Δx=0.1
     Δt=0.001

@@ -4,7 +4,11 @@ using LinearAlgebra
 using DataStructures
 # All tested AD tools
 using Zygote, Enzyme
-adtools = ["zygote", "enzyme"]
+
+abstract type ADtools end
+struct ZygoteTool <: ADtools end
+struct EnzymeTool <: ADtools end
+adtools = [ZygoteTool(), EnzymeTool()]
 
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin
@@ -24,139 +28,145 @@ adtools = ["zygote", "enzyme"]
         @test revolve.numstore == 28
         @test revolve.numinv == 177
     end
+    @testset "Testing optcontrol..." begin
+        include("../examples/optcontrol.jl")
+        @testset "AD tool $adtool" for adtool in adtools
+            @testset "Revolve..." begin
+                steps = 100
+                snaps = 3
+                info = 0
 
-    @testset "Test optcontrol with $adtool" for adtool in adtools
-        include("../examples/optcontrol_$(adtool).jl")
-        @testset "Revolve..." begin
-            steps = 100
-            snaps = 3
-            info = 0
+                revolve = Revolve{Model}(steps, snaps; verbose=info)
+                F, L, F_opt, L_opt = muoptcontrol(revolve, steps, adtool)
+                @test isapprox(F_opt, F, rtol=1e-4)
+                @test isapprox(L_opt, L, rtol=1e-4)
+            end
 
-            revolve = Revolve{Model}(steps, snaps; verbose=info)
-            F, L, F_opt, L_opt = muoptcontrol(revolve, steps)
-            @test isapprox(F_opt, F, rtol=1e-4)
-            @test isapprox(L_opt, L, rtol=1e-4)
-        end
+            @testset "Periodic..." begin
+                steps = 100
+                snaps = 4
+                info = 0
 
-        @testset "Periodic..." begin
-            steps = 100
-            snaps = 4
-            info = 0
-
-            periodic = Periodic{Model}(steps, snaps; verbose=info)
-            F, L, F_opt, L_opt = muoptcontrol(periodic, steps)
-            @test isapprox(F_opt, F, rtol=1e-4)
-            @test isapprox(L_opt, L, rtol=1e-4)
-        end
-    end
-    @testset "Test heat example with $adtool" for adtool in adtools
-        include("../examples/heat_$(adtool).jl")
-        @testset "Revolve..." begin
-            steps = 500
-            snaps = 4
-            info = 0
-
-            revolve = Revolve{Heat}(steps, snaps; verbose=info)
-            T, dT = heat_for(revolve, steps)
-
-            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
-        end
-
-        @testset "Periodic..." begin
-            steps = 500
-            snaps = 4
-            info = 0
-
-            periodic = Periodic{Heat}(steps, snaps; verbose=info)
-            T, dT = heat_for(periodic, steps)
-
-            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
-        end
-
-        @testset "Online_r2..." begin
-            steps = 500
-            snaps = 100
-            info = 0
-            online = Online_r2{Heat}(snaps; verbose=info)
-            T, dT = heat_while(online, steps)
-
-            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                periodic = Periodic{Model}(steps, snaps; verbose=info)
+                F, L, F_opt, L_opt = muoptcontrol(periodic, steps, adtool)
+                @test isapprox(F_opt, F, rtol=1e-4)
+                @test isapprox(L_opt, L, rtol=1e-4)
+            end
         end
     end
-    @testset "Test HDF5 storage using heat example with $adtool" for adtool in adtools
-        include("../examples/heat_$adtool.jl")
-        @testset "Revolve..." begin
-            steps = 500
-            snaps = 4
-            info = 0
+    @testset "Testing heat example" begin
+        include("../examples/heat.jl")
+        @testset "AD tool $adtool" for adtool in adtools
+            @testset "Revolve..." begin
+                steps = 500
+                snaps = 4
+                info = 0
 
-            revolve = Revolve{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
-            T, dT = heat_for(revolve, steps)
+                revolve = Revolve{Heat}(steps, snaps; verbose=info)
+                T, dT = heat_for(revolve, steps, adtool)
 
-            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+            end
+
+            @testset "Periodic..." begin
+                steps = 500
+                snaps = 4
+                info = 0
+
+                periodic = Periodic{Heat}(steps, snaps; verbose=info)
+                T, dT = heat_for(periodic, steps, adtool)
+
+                @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+            end
+
+            @testset "Online_r2..." begin
+                steps = 500
+                snaps = 100
+                info = 0
+                online = Online_r2{Heat}(snaps; verbose=info)
+                T, dT = heat_while(online, steps, adtool)
+
+                @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+            end
         end
+        @testset "Testing HDF5 storage using heat example" begin
+            @testset "AD tool $adtool" for adtool in adtools
+                @testset "Revolve..." begin
+                    steps = 500
+                    snaps = 4
+                    info = 0
 
-        @testset "Periodic..." begin
-            steps = 500
-            snaps = 4
-            info = 0
+                    revolve = Revolve{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+                    T, dT = heat_for(revolve, steps, adtool)
 
-            periodic = Periodic{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
-            T, dT = heat_for(periodic, steps)
+                    @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+                    @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                end
 
-            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
-        end
+                @testset "Periodic..." begin
+                    steps = 500
+                    snaps = 4
+                    info = 0
 
-        @testset "Online_r2..." begin
-            steps = 500
-            snaps = 100
-            info = 0
-            online = Online_r2{Heat}(snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
-            T, dT = heat_while(online, steps)
+                    periodic = Periodic{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+                    T, dT = heat_for(periodic, steps, adtool)
 
-            @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                    @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+                    @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                end
+
+                @testset "Online_r2..." begin
+                    steps = 500
+                    snaps = 100
+                    info = 0
+                    online = Online_r2{Heat}(snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+                    T, dT = heat_while(online, steps, adtool)
+
+                    @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
+                    @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                end
+            end
         end
     end
-    @testset "Test box model example with $(adtool)" for adtool in adtools
-        include("../examples/box_model_$(adtool).jl")
+    @testset "Test box model example" begin
+        include("../examples/box_model.jl")
+        @testset "AD tool $(adtool)" for adtool in adtools
 
-        @testset "Revolve..." begin
-            steps = 10000
-            snaps = 100
-            info = 0
+            @testset "Revolve..." begin
+                steps = 10000
+                snaps = 100
+                info = 0
 
-            revolve = Revolve{Box}(steps, snaps; verbose=info)
-            T, dT = box_for(revolve, steps)
-            @test isapprox(T, 21.41890316892692)
-            @test isapprox(dT[5], 0.00616139595759519)
+                revolve = Revolve{Box}(steps, snaps; verbose=info)
+                T, dT = box_for(revolve, steps, adtool)
+                @test isapprox(T, 21.41890316892692)
+                @test isapprox(dT[5], 0.00616139595759519)
 
-        end
+            end
 
-        @testset "Periodic..." begin
-            steps = 10000
-            snaps = 100
-            info = 0
+            @testset "Periodic..." begin
+                steps = 10000
+                snaps = 100
+                info = 0
 
-            periodic = Periodic{Box}(steps, snaps; verbose=info)
-            T, dT = box_for(periodic, steps)
-            @test isapprox(T, 21.41890316892692)
-            @test isapprox(dT[5], 0.00616139595759519)
-        end
+                periodic = Periodic{Box}(steps, snaps; verbose=info)
+                T, dT = box_for(periodic, steps, adtool)
+                @test isapprox(T, 21.41890316892692)
+                @test isapprox(dT[5], 0.00616139595759519)
+            end
 
-        @testset "Online_r2..." begin
-            steps = 10000
-            snaps = 500
-            info = 0
-            online = Online_r2{Box}(snaps; verbose=info)
-            T, dT = box_while(online, steps)
-            @test isapprox(T, 21.41890316892692)
-            @test isapprox(dT[5], 0.00616139595759519)
+            @testset "Online_r2..." begin
+                steps = 10000
+                snaps = 500
+                info = 0
+                online = Online_r2{Box}(snaps; verbose=info)
+                T, dT = box_while(online, steps, adtool)
+                @test isapprox(T, 21.41890316892692)
+                @test isapprox(dT[5], 0.00616139595759519)
+            end
         end
     end
     @testset "Multilevel" begin
