@@ -113,7 +113,7 @@ end
 
 function set_zero!(nestedmodel::MT) where {MT}
     if length(fieldnames(MT)) == 0
-        if isreal(nestedmodel)
+        if eltype(nestedmodel) <: Number && isreal(nestedmodel)
             if isa(nestedmodel, Number)
                 nestedmodel = zero(MT)
             else
@@ -122,7 +122,10 @@ function set_zero!(nestedmodel::MT) where {MT}
         end
     else
         for name in fieldnames(MT)
-            set_zero!(getfield(nestedmodel, name))
+            field = getfield(nestedmodel, name)
+            if (!isa(field, DataType) && !isa(field, Symbol) && !isa(field, String))
+                set_zero!(getfield(nestedmodel, name))
+            end
         end
     end
 end
