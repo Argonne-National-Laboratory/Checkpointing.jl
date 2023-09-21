@@ -17,7 +17,6 @@ makedocs(
     ),
     modules = [Checkpointing],
     repo = "https://github.com/Argonne-National-Laboratory/Checkpointing.jl/blob/{commit}{path}#{line}",
-    strict = true,
     checkdocs = :exports,
     pages = [
         "Home" => "index.md",
