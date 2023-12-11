@@ -56,7 +56,7 @@ end
 
 export Scheme
 export @checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
-export reset
+export reset!
 
 function serialize(x)
     s = IOBuffer()
