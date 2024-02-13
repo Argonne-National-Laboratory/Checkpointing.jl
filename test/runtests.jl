@@ -12,6 +12,12 @@ adtools = [ZygoteTool(), EnzymeTool()]
 
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin
+        @test Enzyme.EnzymeRules.has_rrule_from_sig(
+            Base.signature_type(Checkpointing.checkpoint_struct_for, Tuple{Any,Any,Any,Any})
+        )
+        @test Enzyme.EnzymeRules.has_rrule_from_sig(
+            Base.signature_type(Checkpointing.checkpoint_struct_while, Tuple{Any,Any,Any,Any})
+        )
         include("speelpenning.jl")
         errf, errg = main()
         @test isapprox(errf, 0.0; atol = 1e-15)

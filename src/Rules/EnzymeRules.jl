@@ -1,33 +1,41 @@
 using Enzyme
-# import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
+import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
 using .EnzymeRules
 
-function augmented_primal(
+function EnzymeRules.augmented_primal(
     config,
     func::Const{typeof(Checkpointing.checkpoint_struct_for)},
-    ret,
-    body,
-    alg,
-    model,
-    range,
-)
+    ret::Type,
+    body::Annotation{<:Function},
+    alg::Const{<:Scheme},
+    model::Annotation{T},
+    range::Const{<:UnitRange{RT}},
+) where {T, RT}
+    @show typeof(alg)
+    @show typeof(body)
+    @show typeof(range)
+    @show typeof(ret)
+    println("augmented_primal")
     if needs_primal(config)
-        return AugmentedReturn(func.val(body.val, alg.val, model.val, range.val), nothing, (model.val,))
+        # return AugmentedReturn(func.val(body.val, alg.val, model.val, range.val), nothing, (model.val,))
+        return AugmentedReturn(nothing, nothing, (model.val,))
     else
         return AugmentedReturn(nothing, nothing, (model.val,))
     end
 end
 
-function reverse(
-    config::ConfigWidth{1},
+function EnzymeRules.reverse(
+    config,
     ::Const{typeof(Checkpointing.checkpoint_struct_for)},
-    dret::Type{<:Const},
+    dret::Type,
     tape,
-    body,
-    alg,
-    model::Duplicated,
-    range,
-)
+    body::Annotation{<:Function},
+    alg::Const{<:Scheme},
+    model::Annotation{T},
+    range::Const{<:UnitRange{RT}},
+) where {T,RT}
+    println("reverse")
+    @show typeof(alg)
     (model_input,) = tape
     model_final = Checkpointing.rev_checkpoint_struct_for(
         body.val,
