@@ -1,5 +1,5 @@
 using Enzyme
-# import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
+import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
 using .EnzymeRules
 
 function augmented_primal(
