@@ -12,7 +12,8 @@ function augmented_primal(
     range,
 )
     if needs_primal(config)
-        return AugmentedReturn(func.val(body.val, alg.val, model.val, range.val), nothing, (model.val,))
+        primal = func.val(body.val, alg.val, model.val, range.val)
+        return AugmentedReturn(primal, nothing, (model.val,))
     else
         return AugmentedReturn(nothing, nothing, (model.val,))
     end
@@ -49,7 +50,6 @@ function augmented_primal(
     model,
     condition,
 )
-    println("augmented_primal")
     if needs_primal(config)
         return AugmentedReturn(func.val(body.val, alg.val, model.val, condition.val), nothing, (model.val,))
     else
