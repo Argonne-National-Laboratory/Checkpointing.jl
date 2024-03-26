@@ -178,4 +178,7 @@ adtools = [ZygoteTool(), EnzymeTool()]
     @testset "Multilevel" begin
         include("multilevel.jl")
     end
+    @testset "Test writing checkpoints out" begin
+        include("output_chkp.jl")
+    end
 end

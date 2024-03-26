@@ -78,8 +78,8 @@ function rev_checkpoint_struct_for(
         GC.enable(false)
     end
     if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_chkp.h5")
-        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_chkp.h5")
+        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_$(alg.write_checkpoints_filename).h5")
+        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_$(alg.write_checkpoints_filename).h5")
     end
     for i = 1:alg.acp
         model_check_outer[i] = deepcopy(model)
@@ -95,18 +95,22 @@ function rev_checkpoint_struct_for(
             body(model)
         end
         for j= alg.period:-1:1
-            if alg.write_checkpoints
+            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[j] = model
             end
             model = deepcopy(model_check_inner[j])
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
-            if alg.write_checkpoints
+            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[j] = shadowmodel
             end
             if !alg.gc
                 GC.gc()
             end
         end
+    end
+    if alg.write_checkpoints
+        close(prim_output.fid)
+        close(adj_output.fid)
     end
     if !alg.gc
         GC.enable(true)

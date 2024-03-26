@@ -26,6 +26,8 @@ mutable struct Revolve{MT} <: Scheme where {MT}
     storage::AbstractStorage
     gc::Bool
     write_checkpoints::Bool
+    write_checkpoints_filename::String
+    write_checkpoints_period::Int
 end
 
 function Revolve{MT}(
@@ -38,7 +40,9 @@ function Revolve{MT}(
     bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0,
     gc::Bool = true,
-    write_checkpoints::Bool = false
+    write_checkpoints::Bool = false,
+    write_checkpoints_filename::String = "chkp.h5",
+    write_checkpoints_period::Int = 1
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
@@ -83,7 +87,8 @@ function Revolve{MT}(
         steps, bundle, tail, acp, cstart, cend, numfwd,
         numinv, numstore, rwcp, prevcend, firstuturned,
         stepof, verbose, fstore, frestore, storage, gc,
-        write_checkpoints
+        write_checkpoints,
+        write_checkpoints_filename, write_checkpoints_period
     )
 
     if verbose > 0
@@ -411,8 +416,8 @@ function rev_checkpoint_struct_for(
         GC.enable(false)
     end
     if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_chkp.h5")
-        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_chkp.h5")
+        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_$(alg.write_checkpoints_filename).h5")
+        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_$(alg.write_checkpoints_filename).h5")
     end
     step = alg.steps
     while true
@@ -428,7 +433,7 @@ function rev_checkpoint_struct_for(
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
             model_final =  deepcopy(model)
-            if alg.write_checkpoints
+            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[step] = model_final
             end
             if alg.verbose > 0
@@ -436,7 +441,7 @@ function rev_checkpoint_struct_for(
                 @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
-            if alg.write_checkpoints
+            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[step] = shadowmodel
             end
             step -= 1
@@ -444,11 +449,11 @@ function rev_checkpoint_struct_for(
                 GC.gc()
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
-            if alg.write_checkpoints
+            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[step] = model
             end
             Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
-            if alg.write_checkpoints
+            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[step] = shadowmodel
             end
             step -= 1
@@ -471,6 +476,10 @@ function rev_checkpoint_struct_for(
     end
     if !alg.gc
         GC.enable(true)
+    end
+    if alg.write_checkpoints
+        close(prim_output.fid)
+        close(adj_output.fid)
     end
     return model_final
 end
