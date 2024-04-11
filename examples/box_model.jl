@@ -157,7 +157,7 @@ function box_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     dbox = Box(zeros(6), zeros(6), zeros(6), zeros(6), 0)
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, timestepper_for, Duplicated(box, dbox), scheme, tsteps)
+    autodiff(Enzyme.ReverseWithPrimal, timestepper_for, Duplicated(box, dbox), Const(scheme), Const(tsteps))
     return box.out_now[1], dbox.in_old
 end
 
@@ -196,7 +196,7 @@ function box_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     dbox = Box(zeros(6), zeros(6), zeros(6), zeros(6), 0)
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, timestepper_while, Duplicated(box, dbox), scheme, tsteps)
+    autodiff(Enzyme.ReverseWithPrimal, timestepper_while, Duplicated(box, dbox), Const(scheme), Const(tsteps))
     return box.out_now[1], dbox.in_old
 end
 
