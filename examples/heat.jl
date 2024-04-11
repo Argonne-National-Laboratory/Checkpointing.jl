@@ -60,7 +60,7 @@ function heat_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat_for, Duplicated(heat, dheat), scheme, tsteps)
+    autodiff(Enzyme.ReverseWithPrimal, sumheat_for, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
 
     return heat.Tnext, dheat.Tnext[2:end-1]
 end
@@ -102,7 +102,7 @@ function heat_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat_while, Duplicated(heat, dheat), scheme, tsteps)
+    autodiff(Enzyme.ReverseWithPrimal, sumheat_while, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
 
     return heat.Tnext, dheat.Tnext[2:end-1]
 end

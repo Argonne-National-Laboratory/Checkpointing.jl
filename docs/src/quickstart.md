@@ -54,7 +54,7 @@ function heat(scheme::Scheme, tsteps::Int)
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), scheme, tsteps)
+    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
 
     return heat.Tnext, dheat.Tnext[2:end-1]
 end

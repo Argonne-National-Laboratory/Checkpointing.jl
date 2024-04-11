@@ -27,7 +27,7 @@ revolve = Revolve{ChkpOut}(
 x = ChkpOut([2.0, 3.0, 4.0])
 dx = ChkpOut([0.0, 0.0, 0.0])
 
-g = autodiff(Enzyme.Reverse, loops, Active, Duplicated(x, dx), revolve, iters)
+g = autodiff(Enzyme.Reverse, loops, Active, Duplicated(x, dx), Const(revolve), Const(iters))
 
 fid = Checkpointing.HDF5.h5open("adjoint_chkp.h5", "r")
 # List all checkpoints

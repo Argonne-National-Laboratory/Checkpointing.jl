@@ -407,7 +407,9 @@ function rev_checkpoint_struct_for(
     range
 ) where {MT}
     model = deepcopy(model_input)
-    @info "Size per checkpoint: $(Base.format_bytes(Base.summarysize(model)))"
+    if alg.verbose > 0
+        @info "Size per checkpoint: $(Base.format_bytes(Base.summarysize(model)))"
+    end
     storemap = Dict{Int32,Int32}()
     check = 0
     model_check = alg.storage

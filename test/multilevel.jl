@@ -32,7 +32,7 @@ revolve = Revolve{Chkp}(it2, 2; verbose=0)
 x = Chkp([2.0, 3.0, 4.0], revolve)
 dx = Chkp([0.0, 0.0, 0.0], revolve)
 
-g = autodiff(Enzyme.ReverseWithPrimal, loops, Active, Duplicated(x, dx), periodic, it1, it2)
+g = autodiff(Enzyme.ReverseWithPrimal, loops, Active, Duplicated(x, dx), Const(periodic), Const(it1), Const(it2))
 
 # TODO: Primal is wrong only when multilevel checkpointing is used
 @test_broken g[2] == primal
