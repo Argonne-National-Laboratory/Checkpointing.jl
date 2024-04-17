@@ -11,12 +11,7 @@ function ChainRulesCore.rrule(
     # TODO: store checkpoints during this forward call and
     # start the reverse with first uturn
     model_input = deepcopy(model)
-    model = fwd_checkpoint_struct_for(
-        body,
-        alg,
-        model,
-        range,
-    )
+    model = fwd_checkpoint_struct_for(body, alg, model, range)
     function checkpoint_struct_pullback(dmodel)
         shadowmodel = deepcopy(model_input)
         set_zero!(shadowmodel)
@@ -33,7 +28,7 @@ function ChainRulesCore.rrule(
     body::Function,
     alg::Scheme,
     model::MT,
-    condition::Function
+    condition::Function,
 ) where {MT}
     model_input = deepcopy(model)
     while condition(model)

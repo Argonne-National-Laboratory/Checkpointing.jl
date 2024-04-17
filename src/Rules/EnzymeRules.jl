@@ -35,7 +35,7 @@ function reverse(
         alg.val,
         model_input,
         model.dval,
-        range.val
+        range.val,
     )
     copyto!(model.val, model_final)
     return (nothing, nothing, nothing, nothing)
@@ -51,7 +51,11 @@ function augmented_primal(
     condition,
 )
     if needs_primal(config)
-        return AugmentedReturn(func.val(body.val, alg.val, model.val, condition.val), nothing, (model.val,))
+        return AugmentedReturn(
+            func.val(body.val, alg.val, model.val, condition.val),
+            nothing,
+            (model.val,),
+        )
     else
         return AugmentedReturn(nothing, nothing, (model.val,))
     end
@@ -73,7 +77,7 @@ function reverse(
         alg.val,
         model_input,
         model.dval,
-        condition.val
+        condition.val,
     )
     copyto!(model.val, model_final)
     return (nothing, nothing, nothing, nothing)

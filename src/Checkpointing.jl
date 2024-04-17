@@ -28,13 +28,13 @@ done: we are done with adjoining the loop equivalent to the `terminate` enum val
 """
 @enum ActionFlag begin
     none
-	store
-	restore
-	forward
-	firstuturn
-	uturn
+    store
+    restore
+    forward
+    firstuturn
+    uturn
     err
-	done
+    done
 end
 
 """
@@ -48,10 +48,10 @@ Stores the state of the checkpointing scheme after an action is taken.
 
 """
 struct Action
-	actionflag::ActionFlag
-	iteration::Int
-	startiteration::Int
-	cpnum::Int
+    actionflag::ActionFlag
+    iteration::Int
+    startiteration::Int
+    cpnum::Int
 end
 
 export Scheme
@@ -86,21 +86,21 @@ export Revolve, guess, factor, next_action!, ActionFlag, Periodic
 export Online_r2, update_revolve
 
 @generated function copyto!(dest::MT, src::MT) where {MT}
-    assignments = [
-        :( dest.$name = src.$name ) for name in fieldnames(MT)
-    ]
-    quote $(assignments...) end
+    assignments = [:(dest.$name = src.$name) for name in fieldnames(MT)]
+    quote
+        $(assignments...)
+    end
 end
 
 function copyto!(dest::MT, src::TT) where {MT,TT}
     for name in (fieldnames(MT))
-        if !isa(src[name], ChainRulesCore.ZeroTangent) && !isa(getfield(dest,name), Int)
+        if !isa(src[name], ChainRulesCore.ZeroTangent) && !isa(getfield(dest, name), Int)
             setfield!(dest, name, convert(typeof(getfield(dest, name)), src[name]))
         end
     end
 end
 
-to_named_tuple(p) = (; (v=>getfield(p, v) for v in fieldnames(typeof(p)))...)
+to_named_tuple(p) = (; (v => getfield(p, v) for v in fieldnames(typeof(p)))...)
 
 function create_tangent(shadowmodel::MT) where {MT}
     shadowtuple = to_named_tuple(shadowmodel)
@@ -162,18 +162,22 @@ adjoints and is created here.  It is supposed to be initialized by ChainRules.
 """
 macro checkpoint_struct(alg, model, loop)
     if loop.head == :for
-        body     = loop.args[2]
+        body = loop.args[2]
         iterator = loop.args[1].args[1]
-        from     = loop.args[1].args[2].args[2]
-        to       = loop.args[1].args[2].args[3]
-        range    = loop.args[1].args[2]
+        from = loop.args[1].args[2].args[2]
+        to = loop.args[1].args[2].args[3]
+        range = loop.args[1].args[2]
         ex = quote
             let
                 if !isa($range, UnitRange{Int64})
                     error("Checkpointing.jl: Only UnitRange{Int64} is supported.")
                 end
                 $iterator = $from
-                $model = Checkpointing.checkpoint_struct_for($alg, $model, $(loop.args[1].args[2])) do $model
+                $model = Checkpointing.checkpoint_struct_for(
+                    $alg,
+                    $model,
+                    $(loop.args[1].args[2]),
+                ) do $model
                     $body
                     $iterator += 1
                     nothing
@@ -185,10 +189,11 @@ macro checkpoint_struct(alg, model, loop)
             function condition($model)
                 $(loop.args[1])
             end
-            $model = Checkpointing.checkpoint_struct_while($alg, $model, condition) do $model
-                $(loop.args[2])
-                nothing
-            end
+            $model =
+                Checkpointing.checkpoint_struct_while($alg, $model, condition) do $model
+                    $(loop.args[2])
+                    nothing
+                end
         end
     else
         error("Checkpointing.jl: Unknown loop construct.")
@@ -196,7 +201,12 @@ macro checkpoint_struct(alg, model, loop)
     esc(ex)
 end
 
-function fwd_checkpoint_struct_for(body::Function, scheme::Scheme, model, range::UnitRange{Int64})
+function fwd_checkpoint_struct_for(
+    body::Function,
+    scheme::Scheme,
+    model,
+    range::UnitRange{Int64},
+)
     for i in range
         body(model)
     end

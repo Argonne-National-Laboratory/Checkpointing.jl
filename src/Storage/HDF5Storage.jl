@@ -10,7 +10,7 @@ mutable struct HDF5Storage{MT} <: AbstractStorage where {MT}
     acp::Int64
 end
 
-function HDF5Storage{MT}(acp::Int; filename=tempname()) where {MT}
+function HDF5Storage{MT}(acp::Int; filename = tempname()) where {MT}
     fid = h5open(filename, "w")
     storage = HDF5Storage{MT}(fid, filename, acp)
     function _finalizer(storage::HDF5Storage{MT})

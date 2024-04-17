@@ -31,21 +31,27 @@ function Periodic{MT}(
     bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0,
     gc::Bool = true,
-    write_checkpoints::Bool = false
+    write_checkpoints::Bool = false,
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
-        anActionInstance.iteration  = 0
-        anActionInstance.cpNum      = 0
+        anActionInstance.iteration = 0
+        anActionInstance.cpNum = 0
     end
-    acp             = checkpoints
-    period          = div(steps, checkpoints)
+    acp = checkpoints
+    period = div(steps, checkpoints)
 
     periodic = Periodic{MT}(
-        steps, acp, period,verbose,
-        fstore, frestore, storage, gc,
-        write_checkpoints
+        steps,
+        acp,
+        period,
+        verbose,
+        fstore,
+        frestore,
+        storage,
+        gc,
+        write_checkpoints,
     )
 
     forwardcount(periodic)
@@ -58,7 +64,12 @@ function forwardcount(periodic::Periodic)
     elseif periodic.steps < 1
         error("Periodic forwardcount: error: steps < 1")
     elseif mod(periodic.steps, periodic.acp) != 0
-        error("Periodic forwardcount: error: steps ", periodic.steps, " not divisible by checkpoints ", periodic.acp)
+        error(
+            "Periodic forwardcount: error: steps ",
+            periodic.steps,
+            " not divisible by checkpoints ",
+            periodic.acp,
+        )
     end
 end
 
@@ -67,8 +78,8 @@ function rev_checkpoint_struct_for(
     alg::Periodic,
     model_input::MT,
     shadowmodel::MT,
-    range
-) where{MT}
+    range,
+) where {MT}
     model = deepcopy(model_input)
     model_final = []
     model_check_outer = alg.storage
@@ -78,28 +89,34 @@ function rev_checkpoint_struct_for(
         GC.enable(false)
     end
     if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_$(alg.write_checkpoints_filename).h5")
-        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_$(alg.write_checkpoints_filename).h5")
+        prim_output = HDF5Storage{MT}(
+            alg.steps;
+            filename = "primal_$(alg.write_checkpoints_filename).h5",
+        )
+        adj_output = HDF5Storage{MT}(
+            alg.steps;
+            filename = "adjoint_$(alg.write_checkpoints_filename).h5",
+        )
     end
     for i = 1:alg.acp
         model_check_outer[i] = deepcopy(model)
-        for j= (i-1)*alg.period: (i)*alg.period-1
+        for j = (i-1)*alg.period:(i)*alg.period-1
             body(model)
         end
     end
     model_final = deepcopy(model)
     for i = alg.acp:-1:1
         model = deepcopy(model_check_outer[i])
-        for j= 1:alg.period
+        for j = 1:alg.period
             model_check_inner[j] = deepcopy(model)
             body(model)
         end
-        for j= alg.period:-1:1
+        for j = alg.period:-1:1
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[j] = model
             end
             model = deepcopy(model_check_inner[j])
-            Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            Enzyme.autodiff(Reverse, body, Duplicated(model, shadowmodel))
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[j] = shadowmodel
             end

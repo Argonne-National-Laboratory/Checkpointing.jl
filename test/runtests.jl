@@ -13,10 +13,16 @@ adtools = [ZygoteTool(), EnzymeTool()]
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(Checkpointing.checkpoint_struct_for, Tuple{Any,Any,Any,Any})
+            Base.signature_type(
+                Checkpointing.checkpoint_struct_for,
+                Tuple{Any,Any,Any,Any},
+            ),
         )
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(Checkpointing.checkpoint_struct_while, Tuple{Any,Any,Any,Any})
+            Base.signature_type(
+                Checkpointing.checkpoint_struct_while,
+                Tuple{Any,Any,Any,Any},
+            ),
         )
         include("speelpenning.jl")
         errf, errg = main()
@@ -42,10 +48,10 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 snaps = 3
                 info = 0
 
-                revolve = Revolve{Model}(steps, snaps; verbose=info)
+                revolve = Revolve{Model}(steps, snaps; verbose = info)
                 F, L, F_opt, L_opt = muoptcontrol(revolve, steps, adtool)
-                @test isapprox(F_opt, F, rtol=1e-4)
-                @test isapprox(L_opt, L, rtol=1e-4)
+                @test isapprox(F_opt, F, rtol = 1e-4)
+                @test isapprox(L_opt, L, rtol = 1e-4)
             end
 
             @testset "Periodic..." begin
@@ -53,10 +59,10 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 snaps = 4
                 info = 0
 
-                periodic = Periodic{Model}(steps, snaps; verbose=info)
+                periodic = Periodic{Model}(steps, snaps; verbose = info)
                 F, L, F_opt, L_opt = muoptcontrol(periodic, steps, adtool)
-                @test isapprox(F_opt, F, rtol=1e-4)
-                @test isapprox(L_opt, L, rtol=1e-4)
+                @test isapprox(F_opt, F, rtol = 1e-4)
+                @test isapprox(L_opt, L, rtol = 1e-4)
             end
         end
     end
@@ -68,11 +74,11 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 snaps = 4
                 info = 0
 
-                revolve = Revolve{Heat}(steps, snaps; verbose=info)
+                revolve = Revolve{Heat}(steps, snaps; verbose = info)
                 T, dT = heat_for(revolve, steps, adtool)
 
-                @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-                @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
             end
 
             @testset "Periodic..." begin
@@ -80,22 +86,22 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 snaps = 4
                 info = 0
 
-                periodic = Periodic{Heat}(steps, snaps; verbose=info)
+                periodic = Periodic{Heat}(steps, snaps; verbose = info)
                 T, dT = heat_for(periodic, steps, adtool)
 
-                @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-                @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
             end
 
             @testset "Online_r2..." begin
                 steps = 500
                 snaps = 100
                 info = 0
-                online = Online_r2{Heat}(snaps; verbose=info)
+                online = Online_r2{Heat}(snaps; verbose = info)
                 T, dT = heat_while(online, steps, adtool)
 
-                @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-                @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
             end
         end
         @testset "Testing HDF5 storage using heat example" begin
@@ -105,11 +111,16 @@ adtools = [ZygoteTool(), EnzymeTool()]
                     snaps = 4
                     info = 0
 
-                    revolve = Revolve{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+                    revolve = Revolve{Heat}(
+                        steps,
+                        snaps;
+                        storage = HDF5Storage{Heat}(snaps),
+                        verbose = info,
+                    )
                     T, dT = heat_for(revolve, steps, adtool)
 
-                    @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-                    @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                    @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                    @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
                 end
 
                 @testset "Periodic..." begin
@@ -117,22 +128,31 @@ adtools = [ZygoteTool(), EnzymeTool()]
                     snaps = 4
                     info = 0
 
-                    periodic = Periodic{Heat}(steps, snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+                    periodic = Periodic{Heat}(
+                        steps,
+                        snaps;
+                        storage = HDF5Storage{Heat}(snaps),
+                        verbose = info,
+                    )
                     T, dT = heat_for(periodic, steps, adtool)
 
-                    @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-                    @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                    @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                    @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
                 end
 
                 @testset "Online_r2..." begin
                     steps = 500
                     snaps = 100
                     info = 0
-                    online = Online_r2{Heat}(snaps; storage=HDF5Storage{Heat}(snaps), verbose=info)
+                    online = Online_r2{Heat}(
+                        snaps;
+                        storage = HDF5Storage{Heat}(snaps),
+                        verbose = info,
+                    )
                     T, dT = heat_while(online, steps, adtool)
 
-                    @test isapprox(norm(T), 66.21987468492061, atol=1e-11)
-                    @test isapprox(norm(dT), 6.970279349365908, atol=1e-11)
+                    @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                    @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
                 end
             end
         end
@@ -146,7 +166,7 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 snaps = 100
                 info = 0
 
-                revolve = Revolve{Box}(steps, snaps; verbose=info)
+                revolve = Revolve{Box}(steps, snaps; verbose = info)
                 T, dT = box_for(revolve, steps, adtool)
                 @test isapprox(T, 21.41890316892692)
                 @test isapprox(dT[5], 0.00616139595759519)
@@ -158,7 +178,7 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 snaps = 100
                 info = 0
 
-                periodic = Periodic{Box}(steps, snaps; verbose=info)
+                periodic = Periodic{Box}(steps, snaps; verbose = info)
                 T, dT = box_for(periodic, steps, adtool)
                 @test isapprox(T, 21.41890316892692)
                 @test isapprox(dT[5], 0.00616139595759519)
@@ -168,7 +188,7 @@ adtools = [ZygoteTool(), EnzymeTool()]
                 steps = 10000
                 snaps = 500
                 info = 0
-                online = Online_r2{Box}(snaps; verbose=info)
+                online = Online_r2{Box}(snaps; verbose = info)
                 T, dT = box_while(online, steps, adtool)
                 @test isapprox(T, 21.41890316892692)
                 @test isapprox(dT[5], 0.00616139595759519)
