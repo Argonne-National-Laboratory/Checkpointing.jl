@@ -15,8 +15,8 @@ function advance(heat::Heat)
     last = heat.Tlast
     λ = heat.λ
     n = heat.n
-    for i in 2:(n-1)
-        next[i] = last[i] + λ*(last[i-1]-2*last[i]+last[i+1])
+    for i = 2:(n-1)
+        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
     end
     return nothing
 end
@@ -24,8 +24,8 @@ end
 
 function sumheat_for(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     # AD: Create shadow copy for derivatives
-    @checkpoint_struct chkpscheme heat for i in 1:tsteps
-    # checkpoint_struct_for(advance, heat)
+    @checkpoint_struct chkpscheme heat for i = 1:tsteps
+        # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -45,8 +45,8 @@ end
 
 function heat_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     n = 100
-    Δx=0.1
-    Δt=0.001
+    Δx = 0.1
+    Δt = 0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -56,19 +56,25 @@ function heat_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
-    heat.Tnext[1]   = 20.0
+    heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat_for, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
+    autodiff(
+        Enzyme.ReverseWithPrimal,
+        sumheat_for,
+        Duplicated(heat, dheat),
+        Const(scheme),
+        Const(tsteps),
+    )
 
     return heat.Tnext, dheat.Tnext[2:end-1]
 end
 
 function heat_for(scheme::Scheme, tsteps::Int, ::ZygoteTool)
     n = 100
-    Δx=0.1
-    Δt=0.001
+    Δx = 0.1
+    Δt = 0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -76,7 +82,7 @@ function heat_for(scheme::Scheme, tsteps::Int, ::ZygoteTool)
     heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
-    heat.Tnext[1]   = 20.0
+    heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient
@@ -87,8 +93,8 @@ end
 
 function heat_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     n = 100
-    Δx=0.1
-    Δt=0.001
+    Δx = 0.1
+    Δt = 0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -98,19 +104,25 @@ function heat_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
-    heat.Tnext[1]   = 20.0
+    heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat_while, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
+    autodiff(
+        Enzyme.ReverseWithPrimal,
+        sumheat_while,
+        Duplicated(heat, dheat),
+        Const(scheme),
+        Const(tsteps),
+    )
 
     return heat.Tnext, dheat.Tnext[2:end-1]
 end
 
 function heat_while(scheme::Scheme, tsteps::Int, ::ZygoteTool)
     n = 100
-    Δx=0.1
-    Δt=0.001
+    Δx = 0.1
+    Δt = 0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -118,7 +130,7 @@ function heat_while(scheme::Scheme, tsteps::Int, ::ZygoteTool)
     heat = Heat(zeros(n), zeros(n), n, λ, 1)
 
     # Boundary conditions
-    heat.Tnext[1]   = 20.0
+    heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient

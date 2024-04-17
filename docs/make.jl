@@ -1,6 +1,6 @@
 using Pkg
 
-checkpointingspec = PackageSpec(path=joinpath(dirname(@__FILE__), ".."))
+checkpointingspec = PackageSpec(path = joinpath(dirname(@__FILE__), ".."))
 Pkg.develop(checkpointingspec)
 
 # when first running instantiate
@@ -13,7 +13,7 @@ makedocs(
     sitename = "Checkpointing.jl",
     format = Documenter.HTML(
         prettyurls = Base.get(ENV, "CI", nothing) == "true",
-        mathengine = Documenter.KaTeX()
+        mathengine = Documenter.KaTeX(),
     ),
     modules = [Checkpointing],
     repo = "https://github.com/Argonne-National-Laboratory/Checkpointing.jl/blob/{commit}{path}#{line}",
@@ -25,7 +25,7 @@ makedocs(
         "Rules" => "rules.md",
         "Storage" => "storage.md",
         "API" => "lib/checkpointing.md",
-    ]
+    ],
 )
 
 deploydocs(

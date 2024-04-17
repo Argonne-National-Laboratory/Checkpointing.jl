@@ -8,7 +8,7 @@ mutable struct ChkpOut
 end
 
 function loops(chkp::ChkpOut, scheme::Scheme, iters::Int)
-    @checkpoint_struct scheme chkp for i in 1:iters
+    @checkpoint_struct scheme chkp for i = 1:iters
         chkp.x .= 2.0 * sqrt.(chkp.x) .* sqrt.(chkp.x)
     end
     return reduce(+, chkp.x)
@@ -18,10 +18,10 @@ iters = 10
 revolve = Revolve{ChkpOut}(
     iters,
     3;
-    verbose=0,
-    write_checkpoints=true,
-    write_checkpoints_filename="chkp",
-    write_checkpoints_period=2
+    verbose = 0,
+    write_checkpoints = true,
+    write_checkpoints_filename = "chkp",
+    write_checkpoints_period = 2,
 )
 
 x = ChkpOut([2.0, 3.0, 4.0])

@@ -42,13 +42,13 @@ function Revolve{MT}(
     gc::Bool = true,
     write_checkpoints::Bool = false,
     write_checkpoints_filename::String = "chkp.h5",
-    write_checkpoints_period::Int = 1
+    write_checkpoints_period::Int = 1,
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
         anActionInstance.actionflag = 0
-        anActionInstance.iteration  = 0
-        anActionInstance.cpNum      = 0
+        anActionInstance.iteration = 0
+        anActionInstance.cpNum = 0
     end
     if verbose > 0
         @info "Revolve: Number of checkpoints: $checkpoints"
@@ -56,14 +56,14 @@ function Revolve{MT}(
     end
     !isa(bundle_, Nothing) ? bundle = bundle_ : bundle = 1
     if bundle < 1 || bundle > steps
-       error("Revolve: bundle parameter out of range [1,steps]")
-    elseif steps<0
-       error("Revolve: negative steps")
+        error("Revolve: bundle parameter out of range [1,steps]")
+    elseif steps < 0
+        error("Revolve: negative steps")
     elseif checkpoints < 0
-       error("Revolve: negative checkpoints")
+        error("Revolve: negative checkpoints")
     end
     cstart = 0
-    tail   = 1
+    tail = 1
     if bundle > 1
         tail = mod(steps, bundle)
         steps = steps / bundle
@@ -73,22 +73,38 @@ function Revolve{MT}(
             tail = bundle
         end
     end
-    cend            = steps
-    acp             = checkpoints
-    numfwd          = 0
-    numinv          = 0
-    numstore        = 0
-    rwcp            = -1
-    prevcend        = 0
-    firstuturned    = false
-    stepof = Vector{Int}(undef, acp+1)
+    cend = steps
+    acp = checkpoints
+    numfwd = 0
+    numinv = 0
+    numstore = 0
+    rwcp = -1
+    prevcend = 0
+    firstuturned = false
+    stepof = Vector{Int}(undef, acp + 1)
 
     revolve = Revolve{MT}(
-        steps, bundle, tail, acp, cstart, cend, numfwd,
-        numinv, numstore, rwcp, prevcend, firstuturned,
-        stepof, verbose, fstore, frestore, storage, gc,
+        steps,
+        bundle,
+        tail,
+        acp,
+        cstart,
+        cend,
+        numfwd,
+        numinv,
+        numstore,
+        rwcp,
+        prevcend,
+        firstuturned,
+        stepof,
+        verbose,
+        fstore,
+        frestore,
+        storage,
+        gc,
         write_checkpoints,
-        write_checkpoints_filename, write_checkpoints_period
+        write_checkpoints_filename,
+        write_checkpoints_period,
     )
 
     if verbose > 0
@@ -110,10 +126,10 @@ end
 
 function next_action!(revolve::Revolve)::Action
     # Default values for next action
-    actionflag     = none
-    iteration      = 0
+    actionflag = none
+    iteration = 0
     startiteration = 0
-    cpnum          = 0
+    cpnum = 0
     if revolve.numinv == 0
         # first invocation
         for v in revolve.stepof
@@ -125,10 +141,10 @@ function next_action!(revolve::Revolve)::Action
     revolve.numinv += 1
     rwcptest = (revolve.rwcp == -1)
     if !rwcptest
-       rwcptest = revolve.stepof[revolve.rwcp+1] != revolve.cstart
+        rwcptest = revolve.stepof[revolve.rwcp+1] != revolve.cstart
     end
     if (revolve.cend - revolve.cstart) == 0
-       # nothing in current subrange
+        # nothing in current subrange
         if (revolve.rwcp == -1) || (revolve.cstart == revolve.stepof[1])
             # we are done
             revolve.rwcp = revolve.rwcp - 1
@@ -143,14 +159,14 @@ function next_action!(revolve::Revolve)::Action
             end
             actionflag = done
         else
-           revolve.cstart = revolve.stepof[revolve.rwcp+1]
-           revolve.prevcend = revolve.cend
-           actionflag = restore
+            revolve.cstart = revolve.stepof[revolve.rwcp+1]
+            revolve.prevcend = revolve.cend
+            actionflag = restore
         end
     elseif (revolve.cend - revolve.cstart) == 1
         revolve.cend = revolve.cend - 1
         revolve.prevcend = revolve.cend
-        if (revolve.rwcp >= 0) && (revolve.stepof[revolve.rwcp + 1] == revolve.cstart)
+        if (revolve.rwcp >= 0) && (revolve.stepof[revolve.rwcp+1] == revolve.cstart)
             revolve.rwcp -= 1
         end
         if !revolve.firstuturned
@@ -170,7 +186,7 @@ function next_action!(revolve::Revolve)::Action
             actionflag = store
         end
     elseif (revolve.prevcend < revolve.cend) && (revolve.acp == revolve.rwcp + 1)
-            error("Revolve: insufficient allowed checkpoints")
+        error("Revolve: insufficient allowed checkpoints")
     else
         availcp = revolve.acp - revolve.rwcp
         if availcp < 1
@@ -188,9 +204,9 @@ function next_action!(revolve::Revolve)::Action
             else
                 bino2 = 1
             end
-            if availcp==1
+            if availcp == 1
                 bino3 = 0
-            elseif availcp>2
+            elseif availcp > 2
                 bino3 = bino2 * (availcp - 1) / (availcp + reps - 2)
             else
                 bino3 = 1
@@ -199,13 +215,13 @@ function next_action!(revolve::Revolve)::Action
             if availcp < 3
                 bino5 = 0
             elseif availcp > 3
-                    bino5 = bino3 * (availcp - 1) / reps
+                bino5 = bino3 * (availcp - 1) / reps
             else
                 bino5 = 1
             end
             if (revolve.cend - revolve.cstart) <= (bino1 + bino3)
                 revolve.cstart = trunc(Int, revolve.cstart + bino4)
-            elseif (revolve.cend - revolve.cstart) >= (range-bino5)
+            elseif (revolve.cend - revolve.cstart) >= (range - bino5)
                 revolve.cstart = trunc(Int, revolve.cstart + bino1)
             else
                 revolve.cstart = trunc(Int, revolve.cend - bino2 - bino3)
@@ -214,10 +230,14 @@ function next_action!(revolve::Revolve)::Action
                 revolve.cstart = prevcstart + 1
             end
             if revolve.cstart == revolve.steps
-                revolve.numfwd = (revolve.numfwd + ((revolve.cstart - 1) - prevcstart)
-                                    * revolve.bundle + revolve.tail)
+                revolve.numfwd = (
+                    revolve.numfwd +
+                    ((revolve.cstart - 1) - prevcstart) * revolve.bundle +
+                    revolve.tail
+                )
             else
-                revolve.numfwd = revolve.numfwd + (revolve.cstart - prevcstart) * revolve.bundle
+                revolve.numfwd =
+                    revolve.numfwd + (revolve.cstart - prevcstart) * revolve.bundle
             end
             actionflag = forward
         end
@@ -245,21 +265,21 @@ function next_action!(revolve::Revolve)::Action
     if (revolve.verbose > 1) && (actionflag == store)
         @info " store input of iteration $iteration  "
     end
-    cpnum=revolve.rwcp
+    cpnum = revolve.rwcp
 
     return Action(actionflag, iteration, startiteration, cpnum)
 
 end
 
-function guess(revolve::Revolve; bundle::Union{Nothing, Int} = nothing)::Int
-    b=1
-    bSteps=revolve.steps
+function guess(revolve::Revolve; bundle::Union{Nothing,Int} = nothing)::Int
+    b = 1
+    bSteps = revolve.steps
     if !isa(bundle, Nothing)
-        b=bundle
+        b = bundle
     end
     if revolve.steps < 1
         error("Revolve: error: steps < 1")
-    elseif b<1
+    elseif b < 1
         error("Revolve: error: bundle < 1")
     else
         if b > 1
@@ -275,10 +295,10 @@ function guess(revolve::Revolve; bundle::Union{Nothing, Int} = nothing)::Int
             checkpoints = 1
             reps = 1
             s = 0
-            while chkrange(revolve, checkpoints+s, reps+s) > bSteps
+            while chkrange(revolve, checkpoints + s, reps + s) > bSteps
                 s -= 1
             end
-            while chkrange(revolve, checkpoints+s, reps+s) < bSteps
+            while chkrange(revolve, checkpoints + s, reps + s) < bSteps
                 s += 1
             end
             checkpoints += s
@@ -314,18 +334,18 @@ function factor(revolve::Revolve, steps, checkpoints, bundle::Union{Nothing,Int}
     if f == -1
         error("Revolve: error returned by forwardcount")
     else
-        factor = float(f)/steps
+        factor = float(f) / steps
     end
     return factor
 end
 
 function chkrange(::Revolve, ss, tt)
     ret = Int(0)
-    res = 1.
+    res = 1.0
     if tt < 0 || ss < 0
         error("Revolve chkrange: error: negative parameter")
     else
-        for i in 1:tt
+        for i = 1:tt
             res = res * (ss + i)
             res = res / i
             if res > typemax(typeof(ret))
@@ -344,8 +364,8 @@ end
 
 function forwardcount(revolve::Revolve)
     checkpoints = revolve.acp
-    bundle      = revolve.bundle
-    steps       = revolve.steps
+    bundle = revolve.bundle
+    steps = revolve.steps
     if checkpoints < 0
         error("Revolve forwardcount: error: checkpoints < 0")
     elseif steps < 1
@@ -353,12 +373,12 @@ function forwardcount(revolve::Revolve)
     elseif bundle < 1
         error("Revolve forwardcount: error: bundle < 1")
     else
-        s=steps
+        s = steps
         if bundle > 1
-            tail = mod(s,bundle)
+            tail = mod(s, bundle)
             s = s / bundle
             if tail > 0
-            s = s + 1
+                s = s + 1
             end
         end
         if s == 1
@@ -369,8 +389,8 @@ function forwardcount(revolve::Revolve)
             reps = 0
             range = 1
             while range < s
-            reps = reps + 1
-            range = range*(reps+checkpoints)/reps
+                reps = reps + 1
+                range = range * (reps + checkpoints) / reps
             end
             ret = (reps * s - range * reps / (checkpoints + 1)) * bundle
         end
@@ -380,7 +400,7 @@ end
 
 function reset!(revolve::Revolve)
     revolve.cstart = 0
-    revolve.tail   = 1
+    revolve.tail = 1
     if revolve.bundle > 1
         tail = mod(steps, bundle)
         steps = steps / bundle
@@ -390,12 +410,12 @@ function reset!(revolve::Revolve)
             tail = bundle
         end
     end
-    revolve.numfwd          = 0
-    revolve.numinv          = 0
-    revolve.numstore        = 0
-    revolve.rwcp            = -1
-    revolve.prevcend        = 0
-    revolve.firstuturned    = false
+    revolve.numfwd = 0
+    revolve.numinv = 0
+    revolve.numstore = 0
+    revolve.rwcp = -1
+    revolve.prevcend = 0
+    revolve.firstuturned = false
     return nothing
 end
 
@@ -404,7 +424,7 @@ function rev_checkpoint_struct_for(
     alg::Revolve,
     model_input::MT,
     shadowmodel::MT,
-    range
+    range,
 ) where {MT}
     model = deepcopy(model_input)
     if alg.verbose > 0
@@ -418,23 +438,29 @@ function rev_checkpoint_struct_for(
         GC.enable(false)
     end
     if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(alg.steps; filename="primal_$(alg.write_checkpoints_filename).h5")
-        adj_output = HDF5Storage{MT}(alg.steps; filename="adjoint_$(alg.write_checkpoints_filename).h5")
+        prim_output = HDF5Storage{MT}(
+            alg.steps;
+            filename = "primal_$(alg.write_checkpoints_filename).h5",
+        )
+        adj_output = HDF5Storage{MT}(
+            alg.steps;
+            filename = "adjoint_$(alg.write_checkpoints_filename).h5",
+        )
     end
     step = alg.steps
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
-            check = check+1
-            storemap[next_action.iteration-1]=check
+            check = check + 1
+            storemap[next_action.iteration-1] = check
             model_check[check] = deepcopy(model)
         elseif (next_action.actionflag == Checkpointing.forward)
-            for j= next_action.startiteration:(next_action.iteration - 1)
+            for j = next_action.startiteration:(next_action.iteration-1)
                 body(model)
             end
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
-            model_final =  deepcopy(model)
+            model_final = deepcopy(model)
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[step] = model_final
             end
@@ -442,7 +468,7 @@ function rev_checkpoint_struct_for(
                 @info "Revolve: First Uturn"
                 @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
-            Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            Enzyme.autodiff(Reverse, body, Duplicated(model, shadowmodel))
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[step] = shadowmodel
             end
@@ -454,7 +480,7 @@ function rev_checkpoint_struct_for(
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[step] = model
             end
-            Enzyme.autodiff(Reverse, body, Duplicated(model,shadowmodel))
+            Enzyme.autodiff(Reverse, body, Duplicated(model, shadowmodel))
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[step] = shadowmodel
             end
@@ -462,16 +488,16 @@ function rev_checkpoint_struct_for(
             if !alg.gc
                 GC.gc()
             end
-            if haskey(storemap,next_action.iteration-1-1)
-                delete!(storemap,next_action.iteration-1-1)
-                check=check-1
+            if haskey(storemap, next_action.iteration - 1 - 1)
+                delete!(storemap, next_action.iteration - 1 - 1)
+                check = check - 1
             end
         elseif (next_action.actionflag == Checkpointing.restore)
             model = deepcopy(model_check[storemap[next_action.iteration-1]])
         elseif next_action.actionflag == Checkpointing.done
-            if haskey(storemap,next_action.iteration-1-1)
-                delete!(storemap,next_action.iteration-1-1)
-                check=check-1
+            if haskey(storemap, next_action.iteration - 1 - 1)
+                delete!(storemap, next_action.iteration - 1 - 1)
+                check = check - 1
             end
             break
         end
