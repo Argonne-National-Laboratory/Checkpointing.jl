@@ -52,11 +52,7 @@ function augmented_primal(
 )
     primal = func.val(body.val, alg.val, deepcopy(model.val), condition.val)
     if needs_primal(config)
-        return AugmentedReturn(
-            primal,
-            nothing,
-            (model.val,),
-        )
+        return AugmentedReturn(primal, nothing, (model.val,))
     else
         return AugmentedReturn(nothing, nothing, (model.val,))
     end
