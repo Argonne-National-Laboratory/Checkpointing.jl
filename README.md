@@ -63,7 +63,6 @@ end
 function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     # AD: Create shadow copy for derivatives
     @checkpoint_struct chkpscheme heat for i in 1:tsteps
-    # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -87,7 +86,7 @@ function heat(scheme::Scheme, tsteps::Int)
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), scheme, tsteps)
+    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
 
     return heat.Tnext, dheat.Tnext[2:end-1]
 end
