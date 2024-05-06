@@ -43,5 +43,5 @@ g = autodiff(
 )
 
 # TODO: Primal is wrong only when multilevel checkpointing is used
-@test_broken g[2] == primal
+@test g[2] == primal
 @test all(dx.x .== [1024.0, 1024.0, 1024.0])
