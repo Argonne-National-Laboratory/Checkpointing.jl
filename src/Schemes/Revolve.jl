@@ -114,7 +114,7 @@ function Revolve{MT}(
         else
             @info "Prediction:"
             @info "Forward steps   : $(Int(predfwdcnt))"
-            @info "Overhead factor : $(predfwdcnt/(steps+1))"
+            @info "Overhead factor : $(predfwdcnt/(steps))"
         end
     end
     return revolve
