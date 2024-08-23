@@ -468,7 +468,7 @@ function rev_checkpoint_struct_for(
                 @info "Revolve: First Uturn"
                 @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
-            Enzyme.autodiff(Reverse, body, Duplicated(model, shadowmodel))
+            Enzyme.autodiff(Reverse, Const(body), Duplicated(model, shadowmodel))
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[step] = shadowmodel
             end
@@ -480,7 +480,7 @@ function rev_checkpoint_struct_for(
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 prim_output[step] = model
             end
-            Enzyme.autodiff(Reverse, body, Duplicated(model, shadowmodel))
+            Enzyme.autodiff(Reverse, Const(body), Duplicated(model, shadowmodel))
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[step] = shadowmodel
             end
