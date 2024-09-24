@@ -21,7 +21,7 @@ function augmented_primal(
 end
 
 function reverse(
-    config::ConfigWidth{1},
+    config,
     ::Const{typeof(Checkpointing.checkpoint_struct_for)},
     dret::Type{<:Const},
     tape,
@@ -60,7 +60,7 @@ function augmented_primal(
 end
 
 function reverse(
-    config::ConfigWidth{1},
+    config,
     ::Const{typeof(Checkpointing.checkpoint_struct_while)},
     dret::Type{<:Const},
     tape,
