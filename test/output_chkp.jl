@@ -2,10 +2,15 @@ using Checkpointing
 using Enzyme
 using Serialization
 using Test
-
+import Base.length
+import Base.iterate
 mutable struct ChkpOut
     x::Vector{Float64}
 end
+
+Base.length(chkp::ChkpOut) = length(chkp.x)
+Base.iterate(chkp::ChkpOut) = iterate(chkp.x)
+Base.iterate(chkp::ChkpOut, i) = iterate(chkp.x, i)
 
 function loops(chkp::ChkpOut, scheme::Scheme, iters::Int)
     @checkpoint_struct scheme chkp for i = 1:iters
@@ -33,6 +38,7 @@ fid = Checkpointing.HDF5.h5open("adjoint_chkp.h5", "r")
 # List all checkpoints
 saved_chkp = sort(parse.(Int, (keys(fid))))
 println("Checkpoints saved: $saved_chkp")
-chkp = Checkpointing.deserialize(read(fid["3"]))
+chkp = Checkpointing.deserialize(read(fid["1"]))
 @test isa(chkp, ChkpOut)
+@test all(dx .== chkp.x)
 close(fid)
