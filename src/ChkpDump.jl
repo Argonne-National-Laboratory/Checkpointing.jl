@@ -7,9 +7,7 @@ end
 ChkpDump(steps, ::Val{false}, period = 1, filename = "chkp") = nothing
 
 function ChkpDump(steps, ::Val{true}, period = 1, filename = "chkp")
-    return ChkpDump(
-        steps, period, filename,
-    )
+    return ChkpDump(steps, period, filename)
 end
 
 dump_prim(::Nothing, _, _) = nothing
