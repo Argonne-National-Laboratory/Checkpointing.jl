@@ -101,8 +101,10 @@ function Revolve{MT}(
         storage,
         gc,
         ChkpDump(
-            steps, Val(write_checkpoints),
-            write_checkpoints_period, write_checkpoints_filename
+            steps,
+            Val(write_checkpoints),
+            write_checkpoints_period,
+            write_checkpoints_filename,
         ),
     )
 
