@@ -25,9 +25,7 @@ mutable struct Revolve{MT} <: Scheme where {MT}
     frestore::Union{Function,Nothing}
     storage::AbstractStorage
     gc::Bool
-    write_checkpoints::Bool
-    write_checkpoints_filename::String
-    write_checkpoints_period::Int
+    chkp_dump::Union{Nothing,ChkpDump}
 end
 
 function Revolve{MT}(
@@ -41,8 +39,8 @@ function Revolve{MT}(
     verbose::Int = 0,
     gc::Bool = true,
     write_checkpoints::Bool = false,
-    write_checkpoints_filename::String = "chkp.h5",
     write_checkpoints_period::Int = 1,
+    write_checkpoints_filename::String = "chkp",
 ) where {MT}
     if !isa(anActionInstance, Nothing)
         # same as default init above
@@ -102,9 +100,12 @@ function Revolve{MT}(
         frestore,
         storage,
         gc,
-        write_checkpoints,
-        write_checkpoints_filename,
-        write_checkpoints_period,
+        ChkpDump(
+            steps,
+            Val(write_checkpoints),
+            write_checkpoints_period,
+            write_checkpoints_filename,
+        ),
     )
 
     if verbose > 0
@@ -437,16 +438,6 @@ function rev_checkpoint_struct_for(
     if !alg.gc
         GC.enable(false)
     end
-    if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(
-            alg.steps;
-            filename = "primal_$(alg.write_checkpoints_filename).h5",
-        )
-        adj_output = HDF5Storage{MT}(
-            alg.steps;
-            filename = "adjoint_$(alg.write_checkpoints_filename).h5",
-        )
-    end
     step = alg.steps
     while true
         next_action = next_action!(alg)
@@ -461,29 +452,21 @@ function rev_checkpoint_struct_for(
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             body(model)
             model_final = deepcopy(model)
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                prim_output[step] = model_final
-            end
+            dump_prim(alg.chkp_dump, step, model_final)
             if alg.verbose > 0
                 @info "Revolve: First Uturn"
                 @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
             Enzyme.autodiff(Reverse, Const(body), Duplicated(model, shadowmodel))
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                adj_output[step] = shadowmodel
-            end
+            dump_adj(alg.chkp_dump, step, shadowmodel)
             step -= 1
             if !alg.gc
                 GC.gc()
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                prim_output[step] = model
-            end
+            dump_prim(alg.chkp_dump, step, model)
             Enzyme.autodiff(Reverse, Const(body), Duplicated(model, shadowmodel))
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                adj_output[step] = shadowmodel
-            end
+            dump_adj(alg.chkp_dump, step, shadowmodel)
             step -= 1
             if !alg.gc
                 GC.gc()
@@ -505,9 +488,5 @@ function rev_checkpoint_struct_for(
     if !alg.gc
         GC.enable(true)
     end
-    if alg.write_checkpoints
-        close(prim_output.fid)
-        close(adj_output.fid)
-    end
-    return model_final
+    return nothing
 end
