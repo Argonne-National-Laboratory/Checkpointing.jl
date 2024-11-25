@@ -13,7 +13,7 @@ end
 dump_prim(::Nothing, _, _) = nothing
 
 function dump_prim(chkp::ChkpDump, step, primal)
-    if (step-1) % chkp.period == 0
+    if (step - 1) % chkp.period == 0
         blob = serialize(primal)
         open("prim_$(chkp.filename)_$step.chkp", "w") do file
             write(file, blob)
