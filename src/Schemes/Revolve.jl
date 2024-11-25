@@ -25,7 +25,7 @@ mutable struct Revolve{MT} <: Scheme where {MT}
     frestore::Union{Function,Nothing}
     storage::AbstractStorage
     gc::Bool
-    chkp_dump::Union{Nothing, ChkpDump}
+    chkp_dump::Union{Nothing,ChkpDump}
 end
 
 function Revolve{MT}(
