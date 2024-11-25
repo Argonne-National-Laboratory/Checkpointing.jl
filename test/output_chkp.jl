@@ -34,11 +34,7 @@ dx = ChkpOut([0.0, 0.0, 0.0])
 
 g = autodiff(Enzyme.Reverse, loops, Active, Duplicated(x, dx), Const(revolve), Const(iters))
 
-fid = Checkpointing.HDF5.h5open("adjoint_chkp.h5", "r")
+chkp = Checkpointing.deserialize(read("adj_chkp_1.chkp"))
 # List all checkpoints
-saved_chkp = sort(parse.(Int, (keys(fid))))
-println("Checkpoints saved: $saved_chkp")
-chkp = Checkpointing.deserialize(read(fid["1"]))
 @test isa(chkp, ChkpOut)
 @test all(dx .== chkp.x)
-close(fid)

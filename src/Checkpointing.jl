@@ -75,6 +75,7 @@ abstract type AbstractStorage end
 
 include("Storage/ArrayStorage.jl")
 include("Storage/HDF5Storage.jl")
+include("ChkpDump.jl")
 
 export AbstractStorage, ArrayStorage, HDF5Storage
 
