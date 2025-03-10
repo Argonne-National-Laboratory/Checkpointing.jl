@@ -73,6 +73,7 @@ function reverse(
 )
     (model_input,) = tape
     Checkpointing.rev_checkpoint_struct_while(
+        config,
         body.val,
         alg.val,
         model_input,

@@ -41,7 +41,9 @@ function ChainRulesCore.rrule(
         shadowmodel = deepcopy(model_input)
         set_zero!(shadowmodel)
         copyto!(shadowmodel, dmodel)
-        model = rev_checkpoint_struct_while(body, alg, model_input, shadowmodel, condition)
+        # mock an RevConfig object
+        config = EnzymeCore.EnzymeRules.RevConfig{false, true, 1, false, false}()
+        model = rev_checkpoint_struct_while(config, body, alg, model_input, shadowmodel, condition)
         dshadowmodel = create_tangent(shadowmodel)
         return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent(), NoTangent()
     end
