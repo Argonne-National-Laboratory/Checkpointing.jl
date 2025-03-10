@@ -1,6 +1,7 @@
 using Enzyme
 import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
 using .EnzymeRules
+import EnzymeCore
 
 function augmented_primal(
     config,
@@ -32,6 +33,7 @@ function reverse(
 )
     (model_input,) = tape
     Checkpointing.rev_checkpoint_struct_for(
+        config,
         body.val,
         alg.val,
         model_input,

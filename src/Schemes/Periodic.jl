@@ -68,6 +68,7 @@ function forwardcount(periodic::Periodic)
 end
 
 function rev_checkpoint_struct_for(
+    config,
     body::Function,
     alg::Periodic,
     model_input::MT,
@@ -110,7 +111,7 @@ function rev_checkpoint_struct_for(
                 prim_output[j] = model
             end
             model = deepcopy(model_check_inner[j])
-            Enzyme.autodiff(Reverse, Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
             if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
                 adj_output[j] = shadowmodel
             end

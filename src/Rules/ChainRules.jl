@@ -1,4 +1,5 @@
 using ChainRulesCore
+import EnzymeCore
 
 function ChainRulesCore.rrule(
     ::typeof(Checkpointing.checkpoint_struct_for),
@@ -16,7 +17,9 @@ function ChainRulesCore.rrule(
         shadowmodel = deepcopy(model_input)
         set_zero!(shadowmodel)
         copyto!(shadowmodel, dmodel)
-        model = rev_checkpoint_struct_for(body, alg, model_input, shadowmodel, range)
+        # mock an RevConfig object
+        config = EnzymeCore.EnzymeRules.RevConfig(false, true, 1, false, false)
+        model = rev_checkpoint_struct_for(config, body, alg, model_input, shadowmodel, range)
         dshadowmodel = create_tangent(shadowmodel)
         return NoTangent(), NoTangent(), NoTangent(), dshadowmodel, NoTangent(), NoTangent()
     end
