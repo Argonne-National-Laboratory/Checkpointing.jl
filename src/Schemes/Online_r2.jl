@@ -427,6 +427,7 @@ function next_action!(online::Online_r2)::Action
 end
 
 function rev_checkpoint_struct_while(
+    config,
     body::Function,
     alg::Online_r2,
     model_input::MT,
@@ -486,7 +487,7 @@ function rev_checkpoint_struct_while(
             model_final = deepcopy(model)
             # Enzyme.autodiff(body, Duplicated(model,shadowmodel))
         elseif (next_action.actionflag == Checkpointing.uturn)
-            Enzyme.autodiff(Reverse, Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
             if haskey(storemap, next_action.iteration - 1 - 1)
                 push!(freeindices, storemap[next_action.iteration-1-1])
                 delete!(storemap, next_action.iteration - 1 - 1)
