@@ -3,6 +3,14 @@ import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
 using .EnzymeRules
 import EnzymeCore
 
+function maybe_duplicated(f, df)
+    if !Enzyme.Compiler.guaranteed_const(typeof(f))
+        return DuplicatedNoNeed(f, df)
+    else
+        return Const(f)
+    end
+end
+
 function augmented_primal(
     config,
     func::Const{typeof(Checkpointing.checkpoint_struct_for)},

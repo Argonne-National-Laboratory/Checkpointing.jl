@@ -458,7 +458,7 @@ function rev_checkpoint_struct_for(
                 @info "Revolve: First Uturn"
                 @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
-            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), maybe_duplicated(body, Enzyme.make_zero(body)), Duplicated(model, shadowmodel))
             dump_adj(alg.chkp_dump, step, shadowmodel)
             step -= 1
             if !alg.gc
@@ -466,7 +466,7 @@ function rev_checkpoint_struct_for(
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
             dump_prim(alg.chkp_dump, step, model)
-            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), maybe_duplicated(body, Enzyme.make_zero(body)), Duplicated(model, shadowmodel))
             dump_adj(alg.chkp_dump, step, shadowmodel)
             step -= 1
             if !alg.gc
