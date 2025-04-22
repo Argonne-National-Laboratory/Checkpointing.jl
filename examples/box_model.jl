@@ -164,7 +164,7 @@ function box_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     # Compute gradient
     autodiff(
         Enzyme.ReverseWithPrimal,
-        timestepper_for,
+        Const(timestepper_for),
         Duplicated(box, dbox),
         Const(scheme),
         Const(tsteps),
