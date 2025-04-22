@@ -1,5 +1,7 @@
-# Checkpointing
-[![][build-stable-img]][build-url] [![][docs-stable-img]][docs-stable-url] [![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
+# Checkpointing 
+[![CI](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions/workflows/action.yml/badge.svg?branch=main)](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions/workflows/action.yml)
+[![][docs-stable-img]][docs-stable-url] 
+[![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
 
 This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in a while or for the loop with a `UnitRange`.
 
@@ -113,5 +115,3 @@ This work is supported by the NSF Cyberinfrastructure for Sustained Scientific I
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://Argonne-National-Laboratory.github.io/Checkpointing.jl/
-[build-url]: https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions?query=workflow/actions?query=workflow
-[build-stable-img]: https://github.com/Argonne-National-Laboratory/Checkpointing.jl/workflows/Run%20tests/badge.svg?branch=main
