@@ -69,7 +69,7 @@ function muoptcontrol(scheme, steps, ::EnzymeTool)
         end
         return model.F[2]
     end
-    autodiff(Enzyme.Reverse, foo, Duplicated(model, bmodel))
+    autodiff(Enzyme.Reverse, Const(foo), Duplicated(model, bmodel))
 
     F = model.F
     L = bmodel.F
