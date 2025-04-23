@@ -40,13 +40,15 @@ function header()
     return
 end
 
-function muoptcontrol(scheme, steps, ::EnzymeTool)
-    println("\n STEPS    -> number of time steps to perform")
-    println("SNAPS    -> number of checkpoints")
-    println("INFO = 1 -> calculate only approximate solution")
-    println("INFO = 2 -> calculate approximate solution + takeshots")
-    println("INFO = 3 -> calculate approximate solution + all information ")
-    println(" ENTER:   STEPS, SNAPS, INFO \n")
+function muoptcontrol(scheme, steps, ::EnzymeTool, verbose = 0)
+    if verbose > 0
+        println("\n STEPS    -> number of time steps to perform")
+        println("SNAPS    -> number of checkpoints")
+        println("INFO = 1 -> calculate only approximate solution")
+        println("INFO = 2 -> calculate approximate solution + takeshots")
+        println("INFO = 3 -> calculate approximate solution + all information ")
+        println(" ENTER:   STEPS, SNAPS, INFO \n")
+    end
 
 
     # F   : output
@@ -78,21 +80,25 @@ function muoptcontrol(scheme, steps, ::EnzymeTool)
     L_opt = Array{Float64,1}(undef, 2)
     opt_sol(F_opt, 1.0)
     opt_lambda(L_opt, 0.0)
-    println("\n\n")
-    println("y_1*(1)  = ", F_opt[1], " y_2*(1)  = ", F_opt[2])
-    println("y_1 (1)  = ", F[1], "  y_2 (1)  = ", F[2], " \n\n")
-    println("l_1*(0)  = ", L_opt[1], "  l_2*(0)  = ", L_opt[2])
-    println("l_1 (0)  = ", L[1], "  sl_2 (0)  = ", L[2], " ")
+    if verbose > 0
+        println("\n\n")
+        println("y_1*(1)  = ", F_opt[1], " y_2*(1)  = ", F_opt[2])
+        println("y_1 (1)  = ", F[1], "  y_2 (1)  = ", F[2], " \n\n")
+        println("l_1*(0)  = ", L_opt[1], "  l_2*(0)  = ", L_opt[2])
+        println("l_1 (0)  = ", L[1], "  sl_2 (0)  = ", L[2], " ")
+    end
     return F, L, F_opt, L_opt
 end
 
-function muoptcontrol(scheme, steps, ::ZygoteTool)
-    println("\n STEPS    -> number of time steps to perform")
-    println("SNAPS    -> number of checkpoints")
-    println("INFO = 1 -> calculate only approximate solution")
-    println("INFO = 2 -> calculate approximate solution + takeshots")
-    println("INFO = 3 -> calculate approximate solution + all information ")
-    println(" ENTER:   STEPS, SNAPS, INFO \n")
+function muoptcontrol(scheme, steps, ::ZygoteTool, verbose = 0)
+    if verbose > 0
+        println("\n STEPS    -> number of time steps to perform")
+        println("SNAPS    -> number of checkpoints")
+        println("INFO = 1 -> calculate only approximate solution")
+        println("INFO = 2 -> calculate approximate solution + takeshots")
+        println("INFO = 3 -> calculate approximate solution + all information ")
+        println(" ENTER:   STEPS, SNAPS, INFO \n")
+    end
 
 
     # F   : output
@@ -122,10 +128,12 @@ function muoptcontrol(scheme, steps, ::ZygoteTool)
     L_opt = Array{Float64,1}(undef, 2)
     opt_sol(F_opt, 1.0)
     opt_lambda(L_opt, 0.0)
-    println("\n\n")
-    println("y_1*(1)  = ", F_opt[1], " y_2*(1)  = ", F_opt[2])
-    println("y_1 (1)  = ", F[1], "  y_2 (1)  = ", F[2], " \n\n")
-    println("l_1*(0)  = ", L_opt[1], "  l_2*(0)  = ", L_opt[2])
-    println("l_1 (0)  = ", L[1], "  sl_2 (0)  = ", L[2], " ")
+    if verbose > 0
+        println("\n\n")
+        println("y_1*(1)  = ", F_opt[1], " y_2*(1)  = ", F_opt[2])
+        println("y_1 (1)  = ", F[1], "  y_2 (1)  = ", F[2], " \n\n")
+        println("l_1*(0)  = ", L_opt[1], "  l_2*(0)  = ", L_opt[2])
+        println("l_1 (0)  = ", L[1], "  l_2 (0)  = ", L[2], " ")
+    end
     return F, L, F_opt, L_opt
 end

@@ -1,14 +1,5 @@
-"""
-    Revolve
-
-This is a Julia adaptation of the functionality of Revolve; see Alg. 799 published by Griewank et al.
-A minor extension is the  optional `bundle` parameter that allows to treat as many loop
-iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
-
-"""
 mutable struct Revolve{MT} <: Scheme where {MT}
     steps::Int
-    bundle::Int
     tail::Int
     acp::Int
     cstart::Int
@@ -21,56 +12,59 @@ mutable struct Revolve{MT} <: Scheme where {MT}
     firstuturned::Bool
     stepof::Vector{Int}
     verbose::Int
-    fstore::Union{Function,Nothing}
-    frestore::Union{Function,Nothing}
     storage::AbstractStorage
     gc::Bool
     chkp_dump::Union{Nothing,ChkpDump}
 end
 
+"""
+    Revolve{MT}(
+        steps::Int, checkpoints::Int;
+        storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
+        verbose::Int = 0,
+        gc::Bool = true,
+        write_checkpoints::Bool = false,
+        write_checkpoints_period::Int = 1,
+        write_checkpoints_filename::String = "chkp",
+    ) where {MT}
+
+Creates a new `Revolve` object for checkpointing.
+- `steps`: is the number of iterations to perform.
+- `checkpoints`: is the number of checkpoints used for storage.
+- `storage`: is the storage backend to use (default is `ArrayStorage`).
+- `verbose::Int`: Verbosity level for logging and diagnostics.
+- `gc::Bool`: Whether to enable garbage collection (default is `true`).
+- `write_checkpoints::Bool`: Whether to enable writing checkpoints (default is `false`).
+- `write_checkpoints_period::Int`: The period for writing checkpoints (default is `1`).
+- `write_checkpoints_filename::String`: The filename for writing checkpoints (default is `"chkp"`).
+
+# References
+
+- Griewank, A. & Walther, A. “Algorithm 799: Revolve: An Implementation of
+Checkpointing for the Reverse or Adjoint Mode of Computational Differentiation.”
+ACM Transactions on Mathematical Software.
+
+This documentation outlines the structure, usage, and functionality of `Revolve`
+and should help users integrate the checkpointing scheme into their Julia
+projects.
+
+"""
 function Revolve{MT}(
     steps::Int,
-    checkpoints::Int,
-    fstore::Union{Function,Nothing} = nothing,
-    frestore::Union{Function,Nothing} = nothing;
+    checkpoints::Int;
     storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
-    anActionInstance::Union{Nothing,Action} = nothing,
-    bundle_::Union{Nothing,Int} = nothing,
     verbose::Int = 0,
     gc::Bool = true,
     write_checkpoints::Bool = false,
     write_checkpoints_period::Int = 1,
     write_checkpoints_filename::String = "chkp",
 ) where {MT}
-    if !isa(anActionInstance, Nothing)
-        # same as default init above
-        anActionInstance.actionflag = 0
-        anActionInstance.iteration = 0
-        anActionInstance.cpNum = 0
-    end
     if verbose > 0
-        @info "Revolve: Number of checkpoints: $checkpoints"
-        @info "Revolve: Number of steps: $steps"
-    end
-    !isa(bundle_, Nothing) ? bundle = bundle_ : bundle = 1
-    if bundle < 1 || bundle > steps
-        error("Revolve: bundle parameter out of range [1,steps]")
-    elseif steps < 0
-        error("Revolve: negative steps")
-    elseif checkpoints < 0
-        error("Revolve: negative checkpoints")
+        @info "[Checkpointing] Number of checkpoints: $checkpoints"
+        @info "[Checkpointing] Number of steps: $steps"
     end
     cstart = 0
     tail = 1
-    if bundle > 1
-        tail = mod(steps, bundle)
-        steps = steps / bundle
-        if tail > 0
-            step += 1
-        else
-            tail = bundle
-        end
-    end
     cend = steps
     acp = checkpoints
     numfwd = 0
@@ -83,7 +77,6 @@ function Revolve{MT}(
 
     revolve = Revolve{MT}(
         steps,
-        bundle,
         tail,
         acp,
         cstart,
@@ -96,8 +89,6 @@ function Revolve{MT}(
         firstuturned,
         stepof,
         verbose,
-        fstore,
-        frestore,
         storage,
         gc,
         ChkpDump(
@@ -113,16 +104,12 @@ function Revolve{MT}(
         if predfwdcnt == -1
             error("Revolve: error returned by  revolve::forwardcount")
         else
-            @info "Prediction:"
-            @info "Forward steps   : $(Int(predfwdcnt))"
-            @info "Overhead factor : $(predfwdcnt/(steps))"
+            @info "[Checkpointing] Prediction:"
+            @info "[Checkpointing] Forward steps   : $(Int(predfwdcnt))"
+            @info "[Checkpointing] Overhead factor : $(predfwdcnt/(steps))"
         end
     end
     return revolve
-end
-
-function adjust(::Revolve)
-    error("Not implemented")
 end
 
 function next_action!(revolve::Revolve)::Action
@@ -149,14 +136,11 @@ function next_action!(revolve::Revolve)::Action
         if (revolve.rwcp == -1) || (revolve.cstart == revolve.stepof[1])
             # we are done
             revolve.rwcp = revolve.rwcp - 1
-            if revolve.verbose > 2
-                @info "Done"
-            end
             if revolve.verbose > 0
-                @info "Summary:"
-                @info " Forward steps: $(revolve.numfwd)"
-                @info " CP stores             : $(revolve.numstore)"
-                @info " NextAction calls      : $(revolve.numinv)"
+                @info "[Checkpointing] Summary:"
+                @info "[Checkpointing] Forward steps:    $(revolve.numfwd)"
+                @info "[Checkpointing] CP stores:        $(revolve.numstore)"
+                @info "[Checkpointing] NextAction calls: $(revolve.numinv)"
             end
             actionflag = done
         else
@@ -231,40 +215,36 @@ function next_action!(revolve::Revolve)::Action
                 revolve.cstart = prevcstart + 1
             end
             if revolve.cstart == revolve.steps
-                revolve.numfwd = (
-                    revolve.numfwd +
-                    ((revolve.cstart - 1) - prevcstart) * revolve.bundle +
-                    revolve.tail
-                )
-            else
                 revolve.numfwd =
-                    revolve.numfwd + (revolve.cstart - prevcstart) * revolve.bundle
+                    (revolve.numfwd + ((revolve.cstart - 1) - prevcstart) + revolve.tail)
+            else
+                revolve.numfwd = revolve.numfwd + revolve.cstart - prevcstart
             end
             actionflag = forward
         end
     end
-    startiteration = prevcstart * revolve.bundle
+    startiteration = prevcstart
     if actionflag == firstuturn
-        iteration = revolve.cstart * revolve.bundle + revolve.tail
+        iteration = revolve.cstart + revolve.tail
     elseif actionflag == uturn
-        iteration = (revolve.cstart + 1) * revolve.bundle
+        iteration = revolve.cstart + 1
     else
-        iteration = revolve.cstart * revolve.bundle
+        iteration = revolve.cstart
     end
     if revolve.verbose > 2
         if actionflag == forward
-            @info " run forward iterations    [$startiteration, $(iteration - 1)]"
+            @info "[Checkpointing] Run forward iterations    [$startiteration, $(iteration - 1)]"
         elseif actionflag == restore
-            @info " restore input of iteration $iteration"
+            @info "[Checkpointing] Restore input of iteration $iteration"
         elseif actionflag == firstuturn
 
-            @info " 1st uturn for iterations  [$startiteration, $(iteration - 1)]"
+            @info "[Checkpointing] 1st uturn for iterations  [$startiteration, $(iteration - 1)]"
         elseif actionflag == uturn
-            @info " uturn for iterations      [$startiteration, $(iteration - 1)]"
+            @info "[Checkpointing] Uturn for iterations      [$startiteration, $(iteration - 1)]"
         end
     end
     if (revolve.verbose > 1) && (actionflag == store)
-        @info " store input of iteration $iteration  "
+        @info "[Checkpointing] Store input of iteration $iteration  "
     end
     cpnum = revolve.rwcp
 
@@ -272,24 +252,11 @@ function next_action!(revolve::Revolve)::Action
 
 end
 
-function guess(revolve::Revolve; bundle::Union{Nothing,Int} = nothing)::Int
-    b = 1
+function guess(revolve::Revolve)::Int
     bSteps = revolve.steps
-    if !isa(bundle, Nothing)
-        b = bundle
-    end
     if revolve.steps < 1
         error("Revolve: error: steps < 1")
-    elseif b < 1
-        error("Revolve: error: bundle < 1")
     else
-        if b > 1
-            revolve.tail = mod(bSteps, b)
-            bSteps = div(bSteps, b)
-            if revolve.tail > 0
-                bSteps = bSteps + 1
-            end
-        end
         if bSteps == 1
             guess = 0
         else
@@ -326,11 +293,7 @@ function guess(revolve::Revolve; bundle::Union{Nothing,Int} = nothing)::Int
     return guess
 end
 
-function factor(revolve::Revolve, steps, checkpoints, bundle::Union{Nothing,Int} = nothing)
-    b = 1
-    if !isa(bundle, Nothing)
-        b = bundle
-    end
+function factor(revolve::Revolve, steps, checkpoints)
     f = forwardcount(revolve)
     if f == -1
         error("Revolve: error returned by forwardcount")
@@ -365,23 +328,13 @@ end
 
 function forwardcount(revolve::Revolve)
     checkpoints = revolve.acp
-    bundle = revolve.bundle
     steps = revolve.steps
     if checkpoints < 0
         error("Revolve forwardcount: error: checkpoints < 0")
     elseif steps < 1
         error("Revolve forwardcount: error: steps < 1")
-    elseif bundle < 1
-        error("Revolve forwardcount: error: bundle < 1")
     else
         s = steps
-        if bundle > 1
-            tail = mod(s, bundle)
-            s = s / bundle
-            if tail > 0
-                s = s + 1
-            end
-        end
         if s == 1
             ret = 0
         elseif checkpoints == 0
@@ -393,7 +346,7 @@ function forwardcount(revolve::Revolve)
                 reps = reps + 1
                 range = range * (reps + checkpoints) / reps
             end
-            ret = (reps * s - range * reps / (checkpoints + 1)) * bundle
+            ret = reps * s - range * reps / (checkpoints + 1)
         end
     end
     return ret
@@ -402,15 +355,6 @@ end
 function reset!(revolve::Revolve)
     revolve.cstart = 0
     revolve.tail = 1
-    if revolve.bundle > 1
-        tail = mod(steps, bundle)
-        steps = steps / bundle
-        if tail > 0
-            step += 1
-        else
-            tail = bundle
-        end
-    end
     revolve.numfwd = 0
     revolve.numinv = 0
     revolve.numstore = 0
@@ -430,7 +374,7 @@ function rev_checkpoint_struct_for(
 ) where {MT}
     model = deepcopy(model_input)
     if alg.verbose > 0
-        @info "Size per checkpoint: $(Base.format_bytes(Base.summarysize(model)))"
+        @info "[Checkpointing] Size per checkpoint: $(Base.format_bytes(Base.summarysize(model)))"
     end
     storemap = Dict{Int32,Int32}()
     check = 0
@@ -455,10 +399,14 @@ function rev_checkpoint_struct_for(
             model_final = deepcopy(model)
             dump_prim(alg.chkp_dump, step, model_final)
             if alg.verbose > 0
-                @info "Revolve: First Uturn"
-                @info "Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
+                @info "[Checkpointing] First uturn"
+                @info "[Checkpointing] Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
-            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(
+                EnzymeCore.set_runtime_activity(Reverse, config),
+                Const(body),
+                Duplicated(model, shadowmodel),
+            )
             dump_adj(alg.chkp_dump, step, shadowmodel)
             step -= 1
             if !alg.gc
@@ -466,7 +414,11 @@ function rev_checkpoint_struct_for(
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
             dump_prim(alg.chkp_dump, step, model)
-            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(
+                EnzymeCore.set_runtime_activity(Reverse, config),
+                Const(body),
+                Duplicated(model, shadowmodel),
+            )
             dump_adj(alg.chkp_dump, step, shadowmodel)
             step -= 1
             if !alg.gc

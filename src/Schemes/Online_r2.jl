@@ -23,8 +23,6 @@ mutable struct Online_r2{MT} <: Scheme where {MT}
     offset::Int
     t::Int
     verbose::Int
-    fstore::Union{Function,Nothing}
-    frestore::Union{Function,Nothing}
     ch::Vector{Int}
     ord_ch::Vector{Int}
     num_rep::Vector{Int}
@@ -32,19 +30,28 @@ mutable struct Online_r2{MT} <: Scheme where {MT}
     storage::AbstractStorage
 end
 
+"""
+    Online_r2{MT}(
+        checkpoints::Int,
+        storage::AbstractStorage = ArrayStorage{MT}(checkpoints);
+        verbose::Int = 0,
+    ) where {MT}
+
+This implements the online checkpointing scheme for `r=2` as described in the paper
+"New Algorithms for Optimal Online Checkpointing" by Philipp Stumm and Andrea Walther.
+
+The key advantage is that the number of iterations does not have to be known a priori.
+
+Creates a new `Online_r2` object for checkpointing.
+- `checkpoints`: is the number of checkpoints used for storage.
+- `storage`: is the storage backend to use (default is `ArrayStorage`).
+
+"""
 function Online_r2{MT}(
-    checkpoints::Int,
-    fstore::Union{Function,Nothing} = nothing,
-    frestore::Union{Function,Nothing} = nothing;
+    checkpoints::Int;
     storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
-    anActionInstance::Union{Nothing,Action} = nothing,
     verbose::Int = 0,
 ) where {MT}
-    if !isa(anActionInstance, Nothing)
-        anActionInstance.actionflag = 0
-        anActionInstance.iteration = 0
-        anActionInstance.cpNum = 0
-    end
     if checkpoints < 0
         @error("Online_r2: negative checkpoints")
     end
@@ -69,7 +76,7 @@ function Online_r2{MT}(
         ord_ch[i] = -1
         num_rep[i] = -1
     end
-    revolve = Revolve{MT}(typemax(Int64), acp, fstore, frestore; verbose = verbose)
+    revolve = Revolve{MT}(typemax(Int64), acp; verbose = verbose)
     online_r2 = Online_r2{MT}(
         check,
         capo,
@@ -85,8 +92,6 @@ function Online_r2{MT}(
         offset,
         t,
         verbose,
-        fstore,
-        frestore,
         ch,
         ord_ch,
         num_rep,
@@ -97,7 +102,7 @@ function Online_r2{MT}(
 end
 
 function update_revolve(online::Online_r2{MT}, steps) where {MT}
-    online.revolve = Revolve{MT}(steps, online.acp, online.fstore, online.frestore)
+    online.revolve = Revolve{MT}(steps, online.acp)
     online.revolve.rwcp = online.revolve.acp - 1
     online.revolve.steps = steps
     online.revolve.acp = online.acp
