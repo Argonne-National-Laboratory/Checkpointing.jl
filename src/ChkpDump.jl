@@ -24,9 +24,6 @@ end
 dump_adj(::Nothing, _, _) = nothing
 
 function dump_adj(chkp::ChkpDump, step, adjoint)
-    @show step
-    @show chkp.period
-    @show step % chkp.period
     if (step - 1) % chkp.period == 0
         blob = serialize(adjoint)
         open("adj_$(chkp.filename)_$step.chkp", "w") do file

@@ -1,7 +1,6 @@
 using Test
 using Checkpointing
 using LinearAlgebra
-using DataStructures
 # All tested AD tools
 using Zygote, Enzyme
 

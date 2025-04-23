@@ -113,13 +113,15 @@ function set_zero!(::Ptr{Nothing})
 end
 
 function set_zero!(nestedmodel::MT) where {MT}
-    if length(fieldnames(MT)) == 0
-        if eltype(nestedmodel) <: Number && isreal(nestedmodel)
+    if eltype(nestedmodel) <: Number && isreal(nestedmodel)
+        if isreal(nestedmodel)
             if isa(nestedmodel, Number)
                 nestedmodel = zero(MT)
             else
                 fill!(nestedmodel, zero(eltype(nestedmodel)))
             end
+        else
+            return nothing
         end
     else
         for name in fieldnames(MT)
@@ -129,6 +131,7 @@ function set_zero!(nestedmodel::MT) where {MT}
             end
         end
     end
+    return nothing
 end
 
 function checkpoint_struct_for(body::Function, scheme::Scheme, model, range)
