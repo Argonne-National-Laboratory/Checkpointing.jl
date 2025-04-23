@@ -15,13 +15,14 @@ permissions:
 
 jobs:
   test-github-cpuonly:
+    name: CI
     env:
       DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04]
+        os: [ubuntu-latest]
         julia-version: ['lts', '1']
         julia-arch: [x64]
 
@@ -33,4 +34,17 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
+  docs:
+    name: Build documentation
+    env:
+      DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
       - run: julia --project=docs/ docs/make.jl

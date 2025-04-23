@@ -4,7 +4,7 @@ A checkpointing scheme may support either for or while loops or both. Each schem
 mutable struct MyScheme{MT} <: Scheme where {MT}
 function MyScheme{MT}(...) where {MT}
 ```
-The constructor may take any number of arguments, but the first argument has to be the model type. The model type is the type of the model that is being differentiated. 
+The constructor may take any number of arguments, but the first argument has to be the model type. The model type is the type of the model that is being differentiated.
 
 A scheme has then to implement the reverse pass with the checkpointing scheme that will replace the for or while loop
 ```julia
