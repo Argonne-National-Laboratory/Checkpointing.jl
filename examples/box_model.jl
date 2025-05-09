@@ -143,7 +143,7 @@ function advance(box::Box)
 end
 
 function timestepper_for(box::Box, scheme::Scheme, tsteps::Int)
-    @checkpoint_struct scheme box for i = 1:tsteps
+    @checkpoint_struct Revolve tsteps 100 for i = 1:tsteps
         advance(box)
         box.in_now[:] = box.out_old
         box.in_old[:] = box.out_now
@@ -172,30 +172,17 @@ function box_for(scheme::Scheme, tsteps::Int, ::EnzymeTool)
     return box.out_now[1], dbox.in_old
 end
 
-function box_for(scheme::Scheme, tsteps::Int, ::ZygoteTool)
-    Tbar = [20.0; 1.0; 1.0]
-    Sbar = [35.5; 34.5; 34.5]
-
-    # Create object from struct. tsteps is not needed for a for-loop
-    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
-
-    # Compute gradient
-    g = Zygote.gradient(timestepper_for, box, scheme, tsteps)
-    return box.out_now[1], g[1][2]
-end
-
-
-function timestepper_while(box::Box, scheme::Scheme, tsteps::Int)
-    box.i = 1
-    @checkpoint_struct scheme box while box.i <= tsteps
-        advance(box)
-        box.in_now[:] = box.out_old
-        box.in_old[:] = box.out_now
-        box.i = box.i + 1
-        nothing
-    end
-    return box.out_now[1]
-end
+# function timestepper_while(box::Box, scheme::Scheme, tsteps::Int)
+#     box.i = 1
+#     @checkpoint_struct scheme box while box.i <= tsteps
+#         advance(box)
+#         box.in_now[:] = box.out_old
+#         box.in_old[:] = box.out_now
+#         box.i = box.i + 1
+#         nothing
+#     end
+#     return box.out_now[1]
+# end
 
 
 function box_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
@@ -215,16 +202,4 @@ function box_while(scheme::Scheme, tsteps::Int, ::EnzymeTool)
         Const(tsteps),
     )
     return box.out_now[1], dbox.in_old
-end
-
-function box_while(scheme::Scheme, tsteps::Int, ::ZygoteTool)
-    Tbar = [20.0; 1.0; 1.0]
-    Sbar = [35.5; 34.5; 34.5]
-
-    # Create object from struct. tsteps is not needed for a for-loop
-    box = Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0)
-
-    # Compute gradient
-    g = Zygote.gradient(timestepper_while, box, scheme, tsteps)
-    return box.out_now[1], g[1][2]
 end

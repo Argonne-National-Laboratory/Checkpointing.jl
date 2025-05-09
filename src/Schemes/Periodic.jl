@@ -3,7 +3,7 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-mutable struct Periodic{MT} <: Scheme where {MT}
+mutable struct Periodic{FT} <: Scheme where {FT}
     steps::Int
     acp::Int
     period::Int
@@ -36,21 +36,21 @@ and then restore it when needed.
 The period will be `div(steps, checkpoints)`.
 
 """
-function Periodic{MT}(
+function Periodic{FT}(
     steps::Int,
     checkpoints::Int;
-    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
+    storage::AbstractStorage = ArrayStorage{FT}(checkpoints),
     verbose::Int = 0,
     gc::Bool = true,
     write_checkpoints::Bool = false,
-) where {MT}
+) where {FT}
     acp = checkpoints
     period = div(steps, checkpoints)
     if verbose > 0
         @info "[Checkpointing] Periodic checkpointing with $acp checkpoints and period $period"
     end
 
-    periodic = Periodic{MT}(steps, acp, period, verbose, storage, gc, write_checkpoints)
+    periodic = Periodic{FT}(steps, acp, period, verbose, storage, gc, write_checkpoints)
 
     forwardcount(periodic)
     return periodic
@@ -66,66 +66,65 @@ end
 
 function rev_checkpoint_struct_for(
     config,
-    body::Function,
-    alg::Periodic,
-    model_input::MT,
-    shadowmodel::MT,
+    body_input::Function,
+    dbody::Function,
+    alg::Periodic{FT},
     range,
-) where {MT}
-    model = deepcopy(model_input)
-    model_final = []
+) where {FT}
+    body = deepcopy(body_input)
+    # model_final = []
     model_check_outer = alg.storage
-    model_check_inner = Array{MT}(undef, alg.period)
+    model_check_inner = Array{FT}(undef, alg.period)
     if !alg.gc
         GC.enable(false)
     end
-    if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(
-            alg.steps;
-            filename = "primal_$(alg.write_checkpoints_filename).h5",
-        )
-        adj_output = HDF5Storage{MT}(
-            alg.steps;
-            filename = "adjoint_$(alg.write_checkpoints_filename).h5",
-        )
-    end
+    # if alg.write_checkpoints
+    #     prim_output = HDF5Storage{MT}(
+    #         alg.steps;
+    #         filename = "primal_$(alg.write_checkpoints_filename).h5",
+    #     )
+    #     adj_output = HDF5Storage{MT}(
+    #         alg.steps;
+    #         filename = "adjoint_$(alg.write_checkpoints_filename).h5",
+    #     )
+    # end
     for i = 1:alg.acp
-        model_check_outer[i] = deepcopy(model)
+        model_check_outer[i] = deepcopy(body)
         for j = ((i-1)*alg.period):((i)*alg.period-1)
-            body(model)
+            body()
         end
     end
-    model_final = deepcopy(model)
+    # model_final = deepcopy(model)
     for i = alg.acp:-1:1
-        model = deepcopy(model_check_outer[i])
+        body = deepcopy(model_check_outer[i])
         for j = 1:alg.period
-            model_check_inner[j] = deepcopy(model)
-            body(model)
+            model_check_inner[j] = deepcopy(body)
+            body()
         end
         for j = alg.period:-1:1
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                prim_output[j] = model
-            end
-            model = deepcopy(model_check_inner[j])
+            # if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
+            #     prim_output[j] = model
+            # end
+            body = deepcopy(model_check_inner[j])
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
-                Const(body),
-                Duplicated(model, shadowmodel),
+                Duplicated(body, dbody),
+                Const,
             )
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                adj_output[j] = shadowmodel
-            end
+            # if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
+            #     adj_output[j] = shadowmodel
+            # end
             if !alg.gc
                 GC.gc()
             end
         end
     end
-    if alg.write_checkpoints
-        close(prim_output.fid)
-        close(adj_output.fid)
-    end
+    # if alg.write_checkpoints
+    #     close(prim_output.fid)
+    #     close(adj_output.fid)
+    # end
     if !alg.gc
         GC.enable(true)
     end
-    return model_final
+    return nothing
 end

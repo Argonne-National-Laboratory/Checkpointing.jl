@@ -134,18 +134,19 @@ function set_zero!(nestedmodel::MT) where {MT}
     return nothing
 end
 
-function checkpoint_struct_for(body::Function, scheme::Scheme, model, range)
+function checkpoint_struct_for(body::Function, scheme::Scheme, range)
     for gensym() in range
-        body(model)
+        body()
     end
-    return model
+    return nothing
 end
 
-function checkpoint_struct_while(body::Function, scheme::Scheme, model, condition)
-    while condition(model)
-        body(model)
+function checkpoint_struct_while(body::Function, scheme::Scheme)
+    go = true
+    while go
+        go = body()
     end
-    return model
+    return nothing
 end
 
 include("Rules/ChainRules.jl")
@@ -164,9 +165,11 @@ not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
 adjoints and is created here.  It is supposed to be initialized by ChainRules.
 
 """
-macro checkpoint_struct(alg, model, loop)
+macro checkpoint_struct(alg, iterations, ckpts, loop)
+    body = loop.args[2]
+    # Anonymous loop body function
+    fbody = gensym()
     if loop.head == :for
-        body = loop.args[2]
         iterator = loop.args[1].args[1]
         from = loop.args[1].args[2].args[2]
         to = loop.args[1].args[2].args[3]
@@ -174,30 +177,27 @@ macro checkpoint_struct(alg, model, loop)
         ex = quote
             let
                 if !isa($range, UnitRange{Int64})
-                    error("Checkpointing.jl: Only UnitRange{Int64} is supported.")
+                    error("Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($range)) is not supported.")
                 end
-                $iterator = $from
-                $model = Checkpointing.checkpoint_struct_for(
-                    $alg,
-                    $model,
-                    $(loop.args[1].args[2]),
-                ) do $model
-                    $body
-                    $iterator += 1
-                    nothing
-                end
+                $fbody = () -> $body
+                Checkpointing.checkpoint_struct_for(
+                    $fbody,
+                    $alg{typeof($fbody)}($iterations, $ckpts),
+                    $range,
+                )
             end
         end
     elseif loop.head == :while
         ex = quote
-            function condition($model)
-                $(loop.args[1])
+            $fbody = () -> begin
+                $body
+                # return loop condition
+                return $(loop.args[1])
             end
-            $model =
-                Checkpointing.checkpoint_struct_while($alg, $model, condition) do $model
-                    $(loop.args[2])
-                    nothing
-                end
+            Checkpointing.checkpoint_struct_while(
+                $fbody,
+                $alg{typeof($fbody)}($ckpts),
+            )
         end
     else
         error("Checkpointing.jl: Unknown loop construct.")
@@ -205,22 +205,22 @@ macro checkpoint_struct(alg, model, loop)
     esc(ex)
 end
 
-function fwd_checkpoint_struct_for(
-    body::Function,
-    scheme::Scheme,
-    model,
-    range::UnitRange{Int64},
-)
-    for i in range
-        body(model)
-    end
-    return model
-end
+# function fwd_checkpoint_struct_for(
+#     body::Function,
+#     scheme::Scheme,
+#     model,
+#     range::UnitRange{Int64},
+# )
+#     for i in range
+#         body(model)
+#     end
+#     return model
+# end
 
-function fwd_checkpoint_struct_while(body::Function, scheme::Scheme, model, condition)
-    while condition(model)
-        body(model)
-    end
-    return model
-end
+# function fwd_checkpoint_struct_while(body::Function, scheme::Scheme, model, condition)
+#     while condition(model)
+#         body(model)
+#     end
+#     return model
+# end
 end
