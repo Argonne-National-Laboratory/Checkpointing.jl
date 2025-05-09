@@ -4,20 +4,22 @@
 Array (RAM) storage for checkpointing.
 
 """
-struct ArrayStorage{MT} <: AbstractStorage where {MT}
-    _storage::Array{MT}
+struct ArrayStorage{FT} <: AbstractStorage where {FT}
+    _fstorage::Array{FT}
 end
 
-function ArrayStorage{MT}(acp::Int) where {MT}
-    storage = Array{MT}(undef, acp)
-    return ArrayStorage(storage)
+function ArrayStorage{FT}(acp::Int) where {FT}
+    fstorage = Array{FT}(undef, acp)
+    return ArrayStorage(fstorage)
 end
 
-Base.getindex(storage::ArrayStorage{MT}, i) where {MT} = storage._storage[i]
-
-function Base.setindex!(storage::ArrayStorage{MT}, v, i) where {MT}
-    storage._storage[i] = v
+function Base.getindex(storage::ArrayStorage{FT}, i) where {FT}
+    storage._fstorage[i]
 end
 
-Base.ndims(::Type{ArrayStorage{MT}}) where {MT} = 1
-Base.size(storage::ArrayStorage{MT}) where {MT} = size(storage._storage)
+function Base.setindex!(storage::ArrayStorage{FT}, v, i) where {FT}
+    storage._fstorage[i] = v
+end
+
+Base.ndims(::Type{ArrayStorage{FT}}) where {FT} = 1
+Base.size(storage::ArrayStorage{FT}) where {FT} = size(storage._storage)
