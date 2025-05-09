@@ -9,15 +9,23 @@ function augmented_primal(
     ret,
     body,
     alg,
-    model,
     range,
 )
-    tape_model = deepcopy(model.val)
-    func.val(body.val, alg.val, model.val, range.val)
+    # tape_model = deepcopy(model.val)
+    @show typeof(alg)
+    tape_body = deepcopy(body.val)
+    for fieldname in fieldnames(typeof(body.val))
+        field = getfield(body.val, fieldname)
+        if isa(field, Core.Box)
+            error("[Checkpointing.jl]: Variable $fieldname is reassigned inside the loop. Please make sure that $fieldname is only changed inplace")
+        end
+    end
+    make_zero!(body.dval)
+    func.val(body.val, alg.val, range.val)
     if needs_primal(config)
-        return AugmentedReturn(nothing, nothing, (tape_model,))
+        return AugmentedReturn(nothing, nothing, (tape_body,))
     else
-        return AugmentedReturn(nothing, nothing, (tape_model,))
+        return AugmentedReturn(nothing, nothing, (tape_body,))
     end
 end
 
@@ -26,21 +34,29 @@ function reverse(
     ::Const{typeof(Checkpointing.checkpoint_struct_for)},
     dret::Type{<:Const},
     tape,
-    body,
+    body::Union{Duplicated, MixedDuplicated},
     alg,
-    model::Duplicated,
     range,
 )
-    (model_input,) = tape
+    (body_input,) = tape
+    @show typeof(body.dval)
+    @show typeof(body)
+    dbody = if isa(body, Duplicated)
+        dbody = body.dval
+    elseif isa(body, MixedDuplicated)
+        dbody = body.dval[]
+    else
+        error("Checkpointing.jl: Unknown type of dbody")
+    end
+
     Checkpointing.rev_checkpoint_struct_for(
         config,
-        body.val,
+        body_input,
+        dbody,
         alg.val,
-        model_input,
-        model.dval,
         range.val,
     )
-    return (nothing, nothing, nothing, nothing)
+    return (nothing, nothing, nothing)
 end
 
 function augmented_primal(
@@ -49,15 +65,19 @@ function augmented_primal(
     ret,
     body,
     alg,
-    model,
-    condition,
 )
-    tape_model = deepcopy(model.val)
-    func.val(body.val, alg.val, model.val, condition.val)
+    tape_body = deepcopy(body.val)
+    for fieldname in fieldnames(typeof(body.val))
+        field = getfield(body.val, fieldname)
+        if isa(field, Core.Box)
+            error("[Checkpointing.jl]: Variable $fieldname is reassigned inside the loop. Please make sure that $fieldname is only changed inplace")
+        end
+    end
+    func.val(body.val, alg.val)
     if needs_primal(config)
-        return AugmentedReturn(nothing, nothing, (tape_model,))
+        return AugmentedReturn(nothing, nothing, (tape_body,))
     else
-        return AugmentedReturn(nothing, nothing, (tape_model,))
+        return AugmentedReturn(nothing, nothing, (tape_body,))
     end
 end
 
@@ -66,21 +86,25 @@ function reverse(
     ::Const{typeof(Checkpointing.checkpoint_struct_while)},
     dret::Type{<:Const},
     tape,
-    body,
+    body::Union{Duplicated, MixedDuplicated},
     alg,
-    model::Duplicated,
-    condition,
 )
-    (model_input,) = tape
+    (body_input,) = tape
+    dbody = if isa(body, Duplicated)
+        dbody = body.dval
+    elseif isa(body, MixedDuplicated)
+        dbody = body.dval[]
+    else
+        error("Checkpointing.jl: Unknown type of dbody")
+    end
+
     Checkpointing.rev_checkpoint_struct_while(
         config,
-        body.val,
+        body_input,
+        dbody,
         alg.val,
-        model_input,
-        model.dval,
-        condition.val,
     )
-    return (nothing, nothing, nothing, nothing)
+    return (nothing, nothing)
 end
 
 export augmented_primal, reverse
