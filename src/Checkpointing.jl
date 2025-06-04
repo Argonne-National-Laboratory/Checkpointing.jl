@@ -56,6 +56,7 @@ end
 
 export Scheme
 export @checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
+export instantiate
 export reset!
 
 function serialize(x)
@@ -182,7 +183,7 @@ macro checkpoint_struct(alg, iterations, ckpts, loop)
                 $fbody = () -> $body
                 Checkpointing.checkpoint_struct_for(
                     $fbody,
-                    $alg{typeof($fbody)}($iterations, $ckpts),
+                    instantiate($fbody, $alg, $iterations),
                     $range,
                 )
             end

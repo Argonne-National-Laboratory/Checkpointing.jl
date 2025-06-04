@@ -24,7 +24,7 @@ end
 
 function sumheat_for(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     # AD: Create shadow copy for derivatives
-    @checkpoint_struct Revolve tsteps 4 for i = 1:tsteps
+    @checkpoint_struct Periodic tsteps 4 for i = 1:tsteps
         # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)

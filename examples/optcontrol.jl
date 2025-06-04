@@ -64,7 +64,7 @@ function muoptcontrol(scheme, steps, snaps, verbose = 0)
     bmodel = Model([0.0, 0.0], [0.0, 0.0], 0.0, 0.0)
 
     function foo(model::Model)
-        @checkpoint_struct eval(scheme) steps snaps for i = 1:steps
+        @checkpoint_struct scheme steps snaps for i = 1:steps
             model.F_H .= model.F
             advance(model)
             model.t += h
