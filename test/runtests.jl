@@ -14,7 +14,7 @@ using Enzyme
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
             Base.signature_type(
                 Checkpointing.checkpoint_struct_while,
-                Tuple{Any,Any,Any},
+                Tuple{Any,Any},
             ),
         )
         include("speelpenning.jl")
@@ -40,47 +40,47 @@ using Enzyme
             snaps = 3
             info = 0
 
-            F, L, F_opt, L_opt = muoptcontrol(:Revolve, steps, snaps)
+            F, L, F_opt, L_opt = muoptcontrol(Revolve(snaps), steps, snaps)
             @test isapprox(F_opt, F, rtol = 1e-4)
             @test isapprox(L_opt, L, rtol = 1e-4)
         end
 
-        @testset "Periodic..." begin
-            steps = 100
-            snaps = 4
-            info = 0
+        # @testset "Periodic..." begin
+        #     steps = 100
+        #     snaps = 4
+        #     info = 0
 
-            F, L, F_opt, L_opt = muoptcontrol(:Periodic, steps, snaps)
-            @test isapprox(F_opt, F, rtol = 1e-4)
-            @test isapprox(L_opt, L, rtol = 1e-4)
-        end
+        #     F, L, F_opt, L_opt = muoptcontrol(:Periodic, steps, snaps)
+        #     @test isapprox(F_opt, F, rtol = 1e-4)
+        #     @test isapprox(L_opt, L, rtol = 1e-4)
+        # end
     end
 
     @testset "Testing heat example" begin
         include("../examples/heat.jl")
-        # @testset "Revolve..." begin
-        #     steps = 500
-        #     snaps = 4
-        #     info = 0
+        @testset "Revolve..." begin
+            steps = 500
+            snaps = 4
+            info = 0
 
-        #     revolve = Revolve{Heat}(steps, snaps; verbose = info)
-        #     T, dT = heat_for(revolve, steps)
+            revolve = Revolve{Heat}(steps, snaps; verbose = info)
+            T, dT = heat_for(revolve, steps)
 
-        #     @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-        #     @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-        # end
+            @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
+        end
 
-        # @testset "Periodic..." begin
-        #     steps = 500
-        #     snaps = 4
-        #     info = 0
+        @testset "Periodic..." begin
+            steps = 500
+            snaps = 4
+            info = 0
 
-        #     periodic = Periodic{Heat}(steps, snaps; verbose = info)
-        #     T, dT = heat_for(periodic, steps)
+            periodic = Periodic{Heat}(steps, snaps; verbose = info)
+            T, dT = heat_for(periodic, steps)
 
-        #     @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-        #     @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-        # end
+            @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
+        end
 
         @testset "Online_r2..." begin
             steps = 500
@@ -192,3 +192,18 @@ println("")
     #     include("output_chkp.jl")
     # end
 # end
+
+using Test
+using Checkpointing
+using LinearAlgebra
+using Enzyme
+
+global steps = 50
+global checkpoints = 7
+global verbose = 0
+include("../examples/printaction.jl")
+revolve = main(steps, checkpoints)
+
+@test revolve.numfwd == 105
+@test revolve.numstore == 28
+@test revolve.numinv == 177

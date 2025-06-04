@@ -49,6 +49,7 @@ and should help users integrate the checkpointing scheme into their Julia
 projects.
 
 """
+
 function Revolve{FT}(
     steps::Int,
     checkpoints::Int;
@@ -61,11 +62,11 @@ function Revolve{FT}(
 ) where {FT}
     if verbose > 0
         @info "[Checkpointing] Number of checkpoints: $checkpoints"
-        @info "[Checkpointing] Number of steps: $steps"
     end
     cstart = 0
     tail = 1
     cend = steps
+    # cend = 0
     acp = checkpoints
     numfwd = 0
     numinv = 0
@@ -110,6 +111,35 @@ function Revolve{FT}(
         end
     end
     return revolve
+end
+
+function Revolve(checkpoints::Integer; kwargs...)
+    return Revolve{Nothing}(0, checkpoints; kwargs...)
+end
+
+function instantiate(::FT,
+    revolve::Revolve{Nothing}, steps::Int
+) where {FT}
+
+    write_checkpoints = false
+    write_checkpoints_period = 1
+    write_checkpoints_filename = "chkp"
+
+    if !isa(revolve.chkp_dump, Nothing)
+        write_checkpoints = true
+        write_checkpoints_period = revolve.chkp_dump.period
+        write_checkpoints_filename = revolve.chkp_dump.filename
+    end
+    return Revolve{FT}(
+        steps,
+        revolve.acp;
+        # storage = revolve.storage,
+        verbose = revolve.verbose,
+        gc = revolve.gc,
+        write_checkpoints = write_checkpoints,
+        write_checkpoints_period = write_checkpoints_period,
+        write_checkpoints_filename = write_checkpoints_filename,
+    )
 end
 
 function next_action!(revolve::Revolve)::Action
