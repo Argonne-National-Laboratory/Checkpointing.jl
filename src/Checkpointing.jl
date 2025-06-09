@@ -55,9 +55,12 @@ struct Action
 end
 
 export Scheme
-export @ad_checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
+export @ad_checkpoint, checkpoint_for, checkpoint_while
 export instantiate
 export reset!
+export AbstractStorage, ArrayStorage, HDF5Storage
+export Revolve, Periodic, Online_r2
+export serialize, deserialize
 
 function serialize(x)
     s = IOBuffer()
@@ -70,7 +73,6 @@ function deserialize(x)
     Serialization.deserialize(s)
 end
 
-export serialize, deserialize
 
 abstract type AbstractStorage end
 
@@ -78,71 +80,19 @@ include("Storage/ArrayStorage.jl")
 include("Storage/HDF5Storage.jl")
 include("ChkpDump.jl")
 
-export AbstractStorage, ArrayStorage, HDF5Storage
 
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 include("Schemes/Online_r2.jl")
 
-export Revolve, guess, factor, next_action!, ActionFlag, Periodic
-export Online_r2, update_revolve
-
-@generated function copyto!(dest::MT, src::MT) where {MT}
-    assignments = [:(dest.$name = src.$name) for name in fieldnames(MT)]
-    quote
-        $(assignments...)
-    end
-end
-
-function copyto!(dest::MT, src::TT) where {MT,TT}
-    for name in (fieldnames(MT))
-        if !isa(src[name], ChainRulesCore.ZeroTangent) && !isa(getfield(dest, name), Int)
-            setfield!(dest, name, convert(typeof(getfield(dest, name)), src[name]))
-        end
-    end
-end
-
-to_named_tuple(p) = (; (v => getfield(p, v) for v in fieldnames(typeof(p)))...)
-
-function create_tangent(shadowmodel::MT) where {MT}
-    shadowtuple = to_named_tuple(shadowmodel)
-    return Tangent{MT,typeof(shadowtuple)}(shadowtuple)
-end
-
-function set_zero!(::Ptr{Nothing})
-    return nothing
-end
-
-function set_zero!(nestedmodel::MT) where {MT}
-    if eltype(nestedmodel) <: Number && isreal(nestedmodel)
-        if isreal(nestedmodel)
-            if isa(nestedmodel, Number)
-                nestedmodel = zero(MT)
-            else
-                fill!(nestedmodel, zero(eltype(nestedmodel)))
-            end
-        else
-            return nothing
-        end
-    else
-        for name in fieldnames(MT)
-            field = getfield(nestedmodel, name)
-            if (!isa(field, DataType) && !isa(field, Symbol) && !isa(field, String))
-                set_zero!(getfield(nestedmodel, name))
-            end
-        end
-    end
-    return nothing
-end
-
-function checkpoint_struct_for(body::Function, scheme::Scheme, range)
+function checkpoint_for(body::Function, scheme::Scheme, range)
     for gensym() in range
         body()
     end
     return nothing
 end
 
-function checkpoint_struct_while(body::Function, scheme::Scheme)
+function checkpoint_while(body::Function, scheme::Scheme)
     go = true
     while go
         go = body()
@@ -150,30 +100,23 @@ function checkpoint_struct_while(body::Function, scheme::Scheme)
     return nothing
 end
 
-include("Rules/ChainRules.jl")
 include("Rules/EnzymeRules.jl")
 
 """
-    @checkpoint_struct(
+    @ad_checkpoint(
         alg,
-        model,
         loop,
     )
 
-This macro is supposed to be only used in conjunction with ChainRules. It does
+This macro is supposed to be only used in conjunction with EnzymeRules. It does
 not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
-`loop` expression. `model` is the primal struct. `shadowmodel` contains the
-adjoints and is created here.  It is supposed to be initialized by ChainRules.
-
+`loop` expression.
 """
 macro ad_checkpoint(alg, loop)
     body = loop.args[2]
     # Anonymous loop body function
     fbody = gensym()
     if loop.head == :for
-        iterator = loop.args[1].args[1]
-        from = loop.args[1].args[2].args[2]
-        to = loop.args[1].args[2].args[3]
         range = loop.args[1].args[2]
         ex = quote
             let
@@ -181,11 +124,7 @@ macro ad_checkpoint(alg, loop)
                     error("Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($range)) is not supported.")
                 end
                 $fbody = () -> $body
-                Checkpointing.checkpoint_struct_for(
-                    $fbody,
-                    $alg,
-                    $range,
-                )
+                Checkpointing.checkpoint_for($fbody, $alg, $range)
             end
         end
     elseif loop.head == :while
@@ -195,10 +134,7 @@ macro ad_checkpoint(alg, loop)
                 # return loop condition
                 return $(loop.args[1])
             end
-            Checkpointing.checkpoint_struct_while(
-                $fbody,
-                $alg,
-            )
+            Checkpointing.checkpoint_while($fbody, $alg)
         end
     else
         error("Checkpointing.jl: Unknown loop construct.")
@@ -206,22 +142,4 @@ macro ad_checkpoint(alg, loop)
     esc(ex)
 end
 
-# function fwd_checkpoint_struct_for(
-#     body::Function,
-#     scheme::Scheme,
-#     model,
-#     range::UnitRange{Int64},
-# )
-#     for i in range
-#         body(model)
-#     end
-#     return model
-# end
-
-# function fwd_checkpoint_struct_while(body::Function, scheme::Scheme, model, condition)
-#     while condition(model)
-#         body(model)
-#     end
-#     return model
-# end
 end

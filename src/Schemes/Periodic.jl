@@ -52,7 +52,7 @@ function Periodic{FT}(
         @info "[Checkpointing] Periodic checkpointing with $acp checkpoints and period $period"
     end
 
-    periodic = Periodic{FT}(
+    Periodic{FT}(
         steps, acp, period, verbose,
         storage, gc,
         ChkpDump(
@@ -62,8 +62,6 @@ function Periodic{FT}(
             write_checkpoints_filename,
         ),
     )
-
-    return periodic
 end
 
 function Periodic(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
@@ -109,7 +107,7 @@ function forwardcount(periodic::Periodic)
     end
 end
 
-function rev_checkpoint_struct_for(
+function rev_checkpoint_for(
     config,
     body_input::Function,
     dbody::Function,

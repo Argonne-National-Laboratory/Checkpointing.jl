@@ -7,13 +7,13 @@ using Enzyme
     @testset "Enzyme..." begin
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
             Base.signature_type(
-                Checkpointing.checkpoint_struct_for,
+                Checkpointing.checkpoint_for,
                 Tuple{Any,Any,Any},
             ),
         )
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
             Base.signature_type(
-                Checkpointing.checkpoint_struct_while,
+                Checkpointing.checkpoint_while,
                 Tuple{Any,Any},
             ),
         )

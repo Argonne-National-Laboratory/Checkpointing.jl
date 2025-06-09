@@ -4,7 +4,7 @@ function main(steps, checkpoints; verbose = 0)
     revolve = Revolve(checkpoints; verbose = verbose)
     revolve = instantiate(Nothing, revolve, steps)
     while true
-        next_action = next_action!(revolve)
+        next_action = Checkpointing.next_action!(revolve)
         if next_action.actionflag == Checkpointing.done
             break
         end

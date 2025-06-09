@@ -398,7 +398,7 @@ function reset!(revolve::Revolve)
     return nothing
 end
 
-function rev_checkpoint_struct_for(
+function rev_checkpoint_for(
     config,
     body_input::Function,
     dbody::Function,

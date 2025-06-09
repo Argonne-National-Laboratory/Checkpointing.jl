@@ -5,14 +5,12 @@ import EnzymeCore
 
 function augmented_primal(
     config,
-    func::Const{typeof(Checkpointing.checkpoint_struct_for)},
+    func::Const{typeof(Checkpointing.checkpoint_for)},
     ret,
     body,
     alg,
     range,
 )
-    # tape_model = deepcopy(model.val)
-    # @show typeof(alg)
     tape_body = deepcopy(body.val)
     for fieldname in fieldnames(typeof(body.val))
         field = getfield(body.val, fieldname)
@@ -31,7 +29,7 @@ end
 
 function reverse(
     config,
-    ::Const{typeof(Checkpointing.checkpoint_struct_for)},
+    ::Const{typeof(Checkpointing.checkpoint_for)},
     dret::Type{<:Const},
     tape,
     body::Union{Duplicated, MixedDuplicated},
@@ -48,7 +46,7 @@ function reverse(
         error("Checkpointing.jl: Unknown type of dbody")
     end
 
-    Checkpointing.rev_checkpoint_struct_for(
+    Checkpointing.rev_checkpoint_for(
         config,
         body_input,
         dbody,
@@ -60,7 +58,7 @@ end
 
 function augmented_primal(
     config,
-    func::Const{typeof(Checkpointing.checkpoint_struct_while)},
+    func::Const{typeof(Checkpointing.checkpoint_while)},
     ret,
     body,
     alg,
@@ -83,7 +81,7 @@ end
 
 function reverse(
     config,
-    ::Const{typeof(Checkpointing.checkpoint_struct_while)},
+    ::Const{typeof(Checkpointing.checkpoint_while)},
     dret::Type{<:Const},
     tape,
     body::Union{Duplicated, MixedDuplicated},
@@ -99,7 +97,7 @@ function reverse(
         error("Checkpointing.jl: Unknown type of dbody")
     end
 
-    Checkpointing.rev_checkpoint_struct_while(
+    Checkpointing.rev_checkpoint_while(
         config,
         body_input,
         dbody,
