@@ -19,7 +19,7 @@ end
 
 """
     Revolve{MT}(
-        steps::Int, checkpoints::Int;
+        checkpoints::Int;
         storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
         verbose::Int = 0,
         gc::Bool = true,
@@ -29,7 +29,6 @@ end
     ) where {MT}
 
 Creates a new `Revolve` object for checkpointing.
-- `steps`: is the number of iterations to perform.
 - `checkpoints`: is the number of checkpoints used for storage.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
 - `verbose::Int`: Verbosity level for logging and diagnostics.
@@ -49,7 +48,6 @@ and should help users integrate the checkpointing scheme into their Julia
 projects.
 
 """
-
 function Revolve{FT}(
     steps::Int,
     checkpoints::Int;

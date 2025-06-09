@@ -1,6 +1,6 @@
 # Storage
 
-The checkpoint storage types are derived from `AbstractStorage` 
+The checkpoint storage types are derived from `AbstractStorage`
 ```@setup direct_solver
 using Checkpointing
 ```
@@ -15,10 +15,10 @@ and have to implement the following functions.
 ```julia
 function MyStorage{MT}(n::Int) where {MT} end
 ```
-* Set and get functions for the storage type
+* save and load functions for the storage type
 ```julia
-Base.getindex(storage::MyStorage{MT}, i::Int) where {MT}
-Base.setindex!(storage::MyStorage{MT}, value, i::Int) where {MT}
+Base.load(body::MT, storage::MyStorage{MT}, i::Int) where {MT}
+Base.save!(body::MT, storage::MyStorage{MT}, value, i::Int) where {MT}
 ```
 * Size and dimension functions
 ```julia

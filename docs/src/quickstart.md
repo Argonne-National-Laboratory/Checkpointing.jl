@@ -29,8 +29,7 @@ end
 
 
 function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
-    # AD: Create shadow copy for derivatives
-    @checkpoint_struct chkpscheme heat for i in 1:tsteps
+    @ad_checkpoint chkpscheme for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -56,14 +55,14 @@ function heat(scheme::Scheme, tsteps::Int)
     # Compute gradient
     autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
 
-    return heat.Tnext, dheat.Tnext[2:end-1]
+    return heat.Tnext, dheat.Tnext[2:(end-1)]
 end
 ```
 
 Plot function values:
 ```@example heat
 tsteps = 500
-T, dT = heat(Revolve{Heat}(tsteps,4), tsteps)
+T, dT = heat(Revolve(4), tsteps)
 ```
 Plot gradient with respect to sum(T):
 ```@example heat

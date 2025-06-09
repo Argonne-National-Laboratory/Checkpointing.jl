@@ -15,7 +15,6 @@ end
 
 """
     Periodic(
-        steps::Int,
         checkpoints::Int;
         storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
         verbose::Int = 0,
@@ -26,7 +25,6 @@ end
 The periodic scheme is used to store the state of the system at regular intervals
 and then restore it when needed.
 
-- `steps`: is the number of iterations to perform.
 - `checkpoints`: is the number of checkpoints used for storage.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
 - `verbose::Int`: Verbosity level for logging and diagnostics.

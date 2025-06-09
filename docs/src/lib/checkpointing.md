@@ -5,7 +5,7 @@ CurrentModule = Checkpointing
 
 ## Decorator macros for loops
 ```@docs
-@checkpoint_struct
+@ad_checkpoint
 
 ```
 
@@ -27,7 +27,5 @@ HDF5Storage
 ## Developer variables for implementing new schemes
 ```@docs
 Scheme
-ActionFlag
-Action
 
 ```
