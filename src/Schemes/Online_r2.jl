@@ -101,17 +101,15 @@ function Online_r2{FT}(
     return online_r2
 end
 
-function Online_r2(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
+function Online_r2(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
     return Online_r2{Nothing}(
         checkpoints;
-        storage=eval(storage){Nothing}(checkpoints),
-        kwargs...
+        storage = eval(storage){Nothing}(checkpoints),
+        kwargs...,
     )
 end
 
-function instantiate(::Type{FT},
-    online::Online_r2{Nothing}
-) where {FT}
+function instantiate(::Type{FT}, online::Online_r2{Nothing}) where {FT}
     return Online_r2{FT}(
         online.acp;
         storage = similar(online.storage, FT),
@@ -240,7 +238,7 @@ function next_action!(online::Online_r2)::Action
                 online.numfwd += online.incr
                 if (online.iter == 0)
                     online.capo = online.ch[online.oldind+1]
-                    for i = 0:(online.t+1)/2
+                    for i = 0:((online.t+1)/2)
                         online.capo += online.incr
                         online.incr = online.incr + 1
                         online.iter = online.iter + 1
@@ -386,7 +384,7 @@ function next_action!(online::Online_r2)::Action
                         if online.verbose > 0
                             @info(" oldind ", online.oldind, " ind ", online.ind)
                         end
-                        for k = online.acp-1:-1:online.incr+1
+                        for k = (online.acp-1):-1:(online.incr+1)
                             online.ord_ch[k+1] = online.ord_ch[k-1+1]
                             online.ch[online.ord_ch[k+1]+1] =
                                 online.ch[online.ord_ch[k-1+1]+1]
@@ -512,7 +510,7 @@ function rev_checkpoint_while(
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
-                Const
+                Const,
             )
             if haskey(storemap, next_action.iteration - 1 - 1)
                 push!(freeindices, storemap[next_action.iteration-1-1])

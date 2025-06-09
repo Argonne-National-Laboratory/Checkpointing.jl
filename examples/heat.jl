@@ -68,5 +68,5 @@ function heat(scheme::Scheme, tsteps::Int)
         Const(tsteps),
     )
 
-    return heat.Tnext, dheat.Tnext[2:end-1]
+    return heat.Tnext, dheat.Tnext[2:(end-1)]
 end

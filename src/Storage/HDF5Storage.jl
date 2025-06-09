@@ -31,7 +31,7 @@ function HDF5Storage{MT}(acp::Int; filename = tempname()) where {MT}
 end
 
 function Base.similar(storage::HDF5Storage{MT}, ::Type{T}) where {MT,T}
-    HDF5Storage{T}(storage.acp; filename=storage.filename)
+    HDF5Storage{T}(storage.acp; filename = storage.filename)
 end
 
 function Base.getindex(storage::HDF5Storage{MT}, i)::MT where {MT}
@@ -52,8 +52,12 @@ end
 @generated function hdf5_update!(dest::MT1, src::MT2) where {MT1,MT2}
     # assignments = [:(@reset :(dest.$name = src.$name)) for name in fieldnames(MT1)]
     assignments = [
-        Expr(:macrocall, Symbol("@reset"), LineNumberNode(@__LINE__), :(dest.$name = src.$name))
-        for name in fieldnames(MT1)
+        Expr(
+            :macrocall,
+            Symbol("@reset"),
+            LineNumberNode(@__LINE__),
+            :(dest.$name = src.$name),
+        ) for name in fieldnames(MT1)
     ]
     quote
         $(assignments...)

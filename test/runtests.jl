@@ -6,16 +6,10 @@ using Enzyme
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(
-                Checkpointing.checkpoint_for,
-                Tuple{Any,Any,Any},
-            ),
+            Base.signature_type(Checkpointing.checkpoint_for, Tuple{Any,Any,Any}),
         )
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(
-                Checkpointing.checkpoint_while,
-                Tuple{Any,Any},
-            ),
+            Base.signature_type(Checkpointing.checkpoint_while, Tuple{Any,Any}),
         )
         include("speelpenning.jl")
         errf, errg = main()
@@ -40,7 +34,8 @@ using Enzyme
             snaps = 4
             info = 0
 
-            F, L, F_opt, L_opt = muoptcontrol(eval(scheme)(snaps, verbose=info), steps, snaps)
+            F, L, F_opt, L_opt =
+                muoptcontrol(eval(scheme)(snaps, verbose = info), steps, snaps)
             @test isapprox(F_opt, F, rtol = 1e-4)
             @test isapprox(L_opt, L, rtol = 1e-4)
         end
@@ -63,7 +58,8 @@ using Enzyme
                 snaps = 100
                 info = 0
 
-                T, dT = heat(eval(scheme)(snaps; verbose = info, storage=:HDF5Storage), steps)
+                T, dT =
+                    heat(eval(scheme)(snaps; verbose = info, storage = :HDF5Storage), steps)
 
                 @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
                 @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)

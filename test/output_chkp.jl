@@ -29,7 +29,14 @@ function output_chkp(scheme)
     x = ChkpOut([2.0, 3.0, 4.0])
     dx = ChkpOut([0.0, 0.0, 0.0])
 
-    g = autodiff(Enzyme.Reverse, loops, Active, Duplicated(x, dx), Const(_scheme), Const(iters))
+    g = autodiff(
+        Enzyme.Reverse,
+        loops,
+        Active,
+        Duplicated(x, dx),
+        Const(_scheme),
+        Const(iters),
+    )
 
     blob = Checkpointing.deserialize(read("adj_chkp_1.chkp"))
     # List all checkpoints

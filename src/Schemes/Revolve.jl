@@ -113,17 +113,16 @@ function Revolve{FT}(
     return revolve
 end
 
-function Revolve(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
+function Revolve(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
     return Revolve{Nothing}(
-        0, checkpoints;
-        storage=eval(storage){Nothing}(checkpoints),
-        kwargs...
+        0,
+        checkpoints;
+        storage = eval(storage){Nothing}(checkpoints),
+        kwargs...,
     )
 end
 
-function instantiate(::Type{FT},
-    revolve::Revolve{Nothing}, steps::Int
-) where {FT}
+function instantiate(::Type{FT}, revolve::Revolve{Nothing}, steps::Int) where {FT}
 
     write_checkpoints = false
     write_checkpoints_period = 1

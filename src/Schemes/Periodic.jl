@@ -53,8 +53,12 @@ function Periodic{FT}(
     end
 
     Periodic{FT}(
-        steps, acp, period, verbose,
-        storage, gc,
+        steps,
+        acp,
+        period,
+        verbose,
+        storage,
+        gc,
         ChkpDump(
             steps,
             Val(write_checkpoints),
@@ -64,17 +68,16 @@ function Periodic{FT}(
     )
 end
 
-function Periodic(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
+function Periodic(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
     return Periodic{Nothing}(
-        0, checkpoints;
-        storage=eval(storage){Nothing}(checkpoints),
-        kwargs...
+        0,
+        checkpoints;
+        storage = eval(storage){Nothing}(checkpoints),
+        kwargs...,
     )
 end
 
-function instantiate(::Type{FT},
-    periodic::Periodic{Nothing}, steps::Int
-) where {FT}
+function instantiate(::Type{FT}, periodic::Periodic{Nothing}, steps::Int) where {FT}
     write_checkpoints = false
     write_checkpoints_period = 1
     write_checkpoints_filename = "chkp"

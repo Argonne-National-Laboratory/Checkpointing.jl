@@ -121,7 +121,9 @@ macro ad_checkpoint(alg, loop)
         ex = quote
             let
                 if !isa($range, UnitRange{Int64})
-                    error("Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($range)) is not supported.")
+                    error(
+                        "Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($range)) is not supported.",
+                    )
                 end
                 $fbody = () -> $body
                 Checkpointing.checkpoint_for($fbody, $alg, $range)
