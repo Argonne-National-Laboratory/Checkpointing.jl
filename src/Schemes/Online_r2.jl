@@ -101,6 +101,24 @@ function Online_r2{FT}(
     return online_r2
 end
 
+function Online_r2(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
+    return Online_r2{Nothing}(
+        checkpoints;
+        storage=eval(storage){Nothing}(checkpoints),
+        kwargs...
+    )
+end
+
+function instantiate(::Type{FT},
+    online::Online_r2{Nothing}
+) where {FT}
+    return Online_r2{FT}(
+        online.acp;
+        storage = similar(online.storage, FT),
+        verbose = online.verbose,
+    )
+end
+
 function update_revolve(online::Online_r2{FT}, steps) where {FT}
     online.revolve = Revolve{FT}(steps, online.acp)
     online.revolve.rwcp = online.revolve.acp - 1
@@ -440,9 +458,9 @@ function rev_checkpoint_struct_while(
     body = deepcopy(body_input)
     model_check = alg.storage
     # model_final = []
-    freeindices = Stack{Int32}()
-    storemapinv = Dict{Int32,Int32}()
-    storemap = Dict{Int32,Int32}()
+    freeindices = Stack{Int64}()
+    storemapinv = Dict{Int64,Int64}()
+    storemap = Dict{Int64,Int64}()
     check = 0
     oldcapo = 0
     onlinesteps = 0
@@ -452,7 +470,8 @@ function rev_checkpoint_struct_while(
         if (next_action.actionflag == Checkpointing.store)
             check = next_action.cpnum + 1
             storemapinv[check] = next_action.iteration
-            model_check[check] = deepcopy(body)
+            # model_check[check] = deepcopy(body)
+            save!(model_check, deepcopy(body), check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = oldcapo:(next_action.iteration-1)
                 go = body()
@@ -478,7 +497,8 @@ function rev_checkpoint_struct_while(
         if (next_action.actionflag == Checkpointing.store)
             check = pop!(freeindices)
             storemap[next_action.iteration-1] = check
-            model_check[check] = deepcopy(body)
+            # model_check[check] = deepcopy(body)
+            save!(model_check, deepcopy(body), check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
                 body()
@@ -499,7 +519,7 @@ function rev_checkpoint_struct_while(
                 delete!(storemap, next_action.iteration - 1 - 1)
             end
         elseif (next_action.actionflag == Checkpointing.restore)
-            body = deepcopy(model_check[storemap[next_action.iteration-1]])
+            body = deepcopy(load(body, model_check, storemap[next_action.iteration-1]))
         elseif next_action.actionflag == Checkpointing.done
             if haskey(storemap, next_action.iteration - 1 - 1)
                 delete!(storemap, next_action.iteration - 1 - 1)

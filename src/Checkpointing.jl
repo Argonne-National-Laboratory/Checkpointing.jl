@@ -55,7 +55,7 @@ struct Action
 end
 
 export Scheme
-export @checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
+export @ad_checkpoint, @checkpoint_struct, checkpoint_struct_for, checkpoint_struct_while
 export instantiate
 export reset!
 
@@ -166,7 +166,7 @@ not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
 adjoints and is created here.  It is supposed to be initialized by ChainRules.
 
 """
-macro checkpoint_struct(alg, iterations, ckpts, loop)
+macro ad_checkpoint(alg, loop)
     body = loop.args[2]
     # Anonymous loop body function
     fbody = gensym()
@@ -183,7 +183,7 @@ macro checkpoint_struct(alg, iterations, ckpts, loop)
                 $fbody = () -> $body
                 Checkpointing.checkpoint_struct_for(
                     $fbody,
-                    instantiate($fbody, $alg, $iterations),
+                    $alg,
                     $range,
                 )
             end
@@ -197,7 +197,7 @@ macro checkpoint_struct(alg, iterations, ckpts, loop)
             end
             Checkpointing.checkpoint_struct_while(
                 $fbody,
-                $alg{typeof($fbody)}($ckpts),
+                $alg,
             )
         end
     else

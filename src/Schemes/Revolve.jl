@@ -113,11 +113,15 @@ function Revolve{FT}(
     return revolve
 end
 
-function Revolve(checkpoints::Integer; kwargs...)
-    return Revolve{Nothing}(0, checkpoints; kwargs...)
+function Revolve(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
+    return Revolve{Nothing}(
+        0, checkpoints;
+        storage=eval(storage){Nothing}(checkpoints),
+        kwargs...
+    )
 end
 
-function instantiate(::FT,
+function instantiate(::Type{FT},
     revolve::Revolve{Nothing}, steps::Int
 ) where {FT}
 
@@ -133,7 +137,7 @@ function instantiate(::FT,
     return Revolve{FT}(
         steps,
         revolve.acp;
-        # storage = revolve.storage,
+        storage = similar(revolve.storage, FT),
         verbose = revolve.verbose,
         gc = revolve.gc,
         write_checkpoints = write_checkpoints,
@@ -405,7 +409,7 @@ function rev_checkpoint_struct_for(
     if alg.verbose > 0
         @info "[Checkpointing] Size per checkpoint: $(Base.format_bytes(Base.summarysize(dbody)))"
     end
-    storemap = Dict{Int32,Int32}()
+    storemap = Dict{Int64,Int64}()
     check = 0
     model_check = alg.storage
     if !alg.gc
@@ -417,48 +421,36 @@ function rev_checkpoint_struct_for(
         if (next_action.actionflag == Checkpointing.store)
             check = check + 1
             storemap[next_action.iteration-1] = check
-            model_check[check] = deepcopy(body)
+            save!(model_check, deepcopy(body), check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
                 body()
             end
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             # body()
-            # dump_prim(alg.chkp_dump, step, model_final)
+            dump_prim(alg.chkp_dump, step, body)
             if alg.verbose > 0
                 @info "[Checkpointing] First uturn"
                 @info "[Checkpointing] Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
             end
-            # println("A in:", body.A)
-            # println("y in:", body.y)
-            # println("dA in:", dbody.A)
-            # println("dy in:", dbody.y)
-            # @show typeof(body)
-            # @show fieldname
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
-                # ReverseWithPrimal,
                 Duplicated(body, dbody),
                 Const,
-                # Duplicated(model, dmodel),
             )
-            # println("dA out:", dbody.A)
-            # println("dy out:", dbody.y)
-            # dump_adj(alg.chkp_dump, step, dmodel)
+            dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
             if !alg.gc
                 GC.gc()
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
-            # dump_prim(alg.chkp_dump, step, model)
-            # println("dA in:", dbody.A)
+            dump_prim(alg.chkp_dump, step, body)
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
             )
-            # println("dA out:", dbody.A)
-            # dump_adj(alg.chkp_dump, step, dmodel)
+            dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
             if !alg.gc
                 GC.gc()
@@ -468,7 +460,7 @@ function rev_checkpoint_struct_for(
                 check = check - 1
             end
         elseif (next_action.actionflag == Checkpointing.restore)
-            body = deepcopy(model_check[storemap[next_action.iteration-1]])
+            body = deepcopy(load(body, model_check, storemap[next_action.iteration-1]))
         elseif next_action.actionflag == Checkpointing.done
             if haskey(storemap, next_action.iteration - 1 - 1)
                 delete!(storemap, next_action.iteration - 1 - 1)

@@ -22,9 +22,9 @@ function advance(heat::Heat)
 end
 
 
-function sumheat_for(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+function sumheat(heat::Heat, scheme::Union{Revolve,Periodic}, tsteps::Int64)
     # AD: Create shadow copy for derivatives
-    @checkpoint_struct Periodic tsteps 4 for i = 1:tsteps
+    @ad_checkpoint scheme for i = 1:tsteps
         # checkpoint_struct_for(advance, heat)
         heat.Tlast .= heat.Tnext
         advance(heat)
@@ -32,10 +32,10 @@ function sumheat_for(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     return reduce(+, heat.Tnext)
 end
 
-function sumheat_while(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+function sumheat(heat::Heat, scheme::Online_r2, tsteps::Int64)
     # AD: Create shadow copy for derivatives
     heat.tsteps = 1
-    @checkpoint_struct Online_r2 5 100 while heat.tsteps <= tsteps
+    @ad_checkpoint scheme while heat.tsteps <= tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
         heat.tsteps += 1
@@ -43,7 +43,7 @@ function sumheat_while(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     return reduce(+, heat.Tnext)
 end
 
-function heat_for(scheme::Scheme, tsteps::Int)
+function heat(scheme::Scheme, tsteps::Int)
     n = 100
     Δx = 0.1
     Δt = 0.001
@@ -62,35 +62,7 @@ function heat_for(scheme::Scheme, tsteps::Int)
     # Compute gradient
     autodiff(
         Enzyme.ReverseWithPrimal,
-        sumheat_for,
-        Duplicated(heat, dheat),
-        Const(scheme),
-        Const(tsteps),
-    )
-
-    return heat.Tnext, dheat.Tnext[2:end-1]
-end
-
-function heat_while(scheme::Scheme, tsteps::Int)
-    n = 100
-    Δx = 0.1
-    Δt = 0.001
-    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
-    λ = 0.5
-
-    # Create object from struct. tsteps is not needed for a for-loop
-    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
-    # Shadow copy for Enzyme
-    dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
-
-    # Boundary conditions
-    heat.Tnext[1] = 20.0
-    heat.Tnext[end] = 0
-
-    # Compute gradient
-    autodiff(
-        Enzyme.ReverseWithPrimal,
-        sumheat_while,
+        sumheat,
         Duplicated(heat, dheat),
         Const(scheme),
         Const(tsteps),

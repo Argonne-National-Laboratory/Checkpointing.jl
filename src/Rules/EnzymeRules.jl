@@ -12,7 +12,7 @@ function augmented_primal(
     range,
 )
     # tape_model = deepcopy(model.val)
-    @show typeof(alg)
+    # @show typeof(alg)
     tape_body = deepcopy(body.val)
     for fieldname in fieldnames(typeof(body.val))
         field = getfield(body.val, fieldname)
@@ -20,7 +20,7 @@ function augmented_primal(
             error("[Checkpointing.jl]: Variable $fieldname is reassigned inside the loop. Please make sure that $fieldname is only changed inplace")
         end
     end
-    make_zero!(body.dval)
+    # make_zero!(body.dval)
     func.val(body.val, alg.val, range.val)
     if needs_primal(config)
         return AugmentedReturn(nothing, nothing, (tape_body,))
@@ -39,8 +39,7 @@ function reverse(
     range,
 )
     (body_input,) = tape
-    @show typeof(body.dval)
-    @show typeof(body)
+    scheme = instantiate(typeof(body_input), alg.val, length(range.val))
     dbody = if isa(body, Duplicated)
         dbody = body.dval
     elseif isa(body, MixedDuplicated)
@@ -53,7 +52,7 @@ function reverse(
         config,
         body_input,
         dbody,
-        alg.val,
+        scheme,
         range.val,
     )
     return (nothing, nothing, nothing)
@@ -73,6 +72,7 @@ function augmented_primal(
             error("[Checkpointing.jl]: Variable $fieldname is reassigned inside the loop. Please make sure that $fieldname is only changed inplace")
         end
     end
+    # make_zero!(body.dval)
     func.val(body.val, alg.val)
     if needs_primal(config)
         return AugmentedReturn(nothing, nothing, (tape_body,))
@@ -90,6 +90,7 @@ function reverse(
     alg,
 )
     (body_input,) = tape
+    scheme = instantiate(typeof(body_input), alg.val)
     dbody = if isa(body, Duplicated)
         dbody = body.dval
     elseif isa(body, MixedDuplicated)
@@ -102,7 +103,7 @@ function reverse(
         config,
         body_input,
         dbody,
-        alg.val,
+        scheme,
     )
     return (nothing, nothing)
 end

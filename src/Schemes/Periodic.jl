@@ -10,7 +10,7 @@ mutable struct Periodic{FT} <: Scheme where {FT}
     verbose::Int
     storage::AbstractStorage
     gc::Bool
-    write_checkpoints::Bool
+    chkp_dump::Union{Nothing,ChkpDump}
 end
 
 """
@@ -43,6 +43,8 @@ function Periodic{FT}(
     verbose::Int = 0,
     gc::Bool = true,
     write_checkpoints::Bool = false,
+    write_checkpoints_period::Int = 1,
+    write_checkpoints_filename::String = "chkp",
 ) where {FT}
     acp = checkpoints
     period = div(steps, checkpoints)
@@ -50,11 +52,54 @@ function Periodic{FT}(
         @info "[Checkpointing] Periodic checkpointing with $acp checkpoints and period $period"
     end
 
-    periodic = Periodic{FT}(steps, acp, period, verbose, storage, gc, write_checkpoints)
+    periodic = Periodic{FT}(
+        steps, acp, period, verbose,
+        storage, gc,
+        ChkpDump(
+            steps,
+            Val(write_checkpoints),
+            write_checkpoints_period,
+            write_checkpoints_filename,
+        ),
+    )
 
-    forwardcount(periodic)
     return periodic
 end
+
+function Periodic(checkpoints::Integer; storage::Symbol=:ArrayStorage, kwargs...)
+    return Periodic{Nothing}(
+        0, checkpoints;
+        storage=eval(storage){Nothing}(checkpoints),
+        kwargs...
+    )
+end
+
+function instantiate(::Type{FT},
+    periodic::Periodic{Nothing}, steps::Int
+) where {FT}
+    write_checkpoints = false
+    write_checkpoints_period = 1
+    write_checkpoints_filename = "chkp"
+
+    if !isa(periodic.chkp_dump, Nothing)
+        write_checkpoints = true
+        write_checkpoints_period = periodic.chkp_dump.period
+        write_checkpoints_filename = periodic.chkp_dump.filename
+    end
+
+    return Periodic{FT}(
+        steps,
+        periodic.acp;
+        verbose = periodic.verbose,
+        storage = similar(periodic.storage, FT),
+        gc = periodic.gc,
+        write_checkpoints = write_checkpoints,
+        write_checkpoints_period = write_checkpoints_period,
+        write_checkpoints_filename = write_checkpoints_filename,
+    )
+end
+
+forwardcount(::Periodic{Nothing}) = nothing
 
 function forwardcount(periodic::Periodic)
     if periodic.acp < 0
@@ -72,57 +117,38 @@ function rev_checkpoint_struct_for(
     range,
 ) where {FT}
     body = deepcopy(body_input)
-    # model_final = []
     model_check_outer = alg.storage
-    model_check_inner = Array{FT}(undef, alg.period)
+    model_check_inner = ArrayStorage{FT}(alg.period)
     if !alg.gc
         GC.enable(false)
     end
-    # if alg.write_checkpoints
-    #     prim_output = HDF5Storage{MT}(
-    #         alg.steps;
-    #         filename = "primal_$(alg.write_checkpoints_filename).h5",
-    #     )
-    #     adj_output = HDF5Storage{MT}(
-    #         alg.steps;
-    #         filename = "adjoint_$(alg.write_checkpoints_filename).h5",
-    #     )
-    # end
     for i = 1:alg.acp
-        model_check_outer[i] = deepcopy(body)
+        save!(model_check_outer, deepcopy(body), i)
         for j = ((i-1)*alg.period):((i)*alg.period-1)
             body()
         end
     end
-    # model_final = deepcopy(model)
+
     for i = alg.acp:-1:1
-        body = deepcopy(model_check_outer[i])
+        body = deepcopy(load(body, model_check_outer, i))
         for j = 1:alg.period
-            model_check_inner[j] = deepcopy(body)
+            save!(model_check_inner, deepcopy(body), j)
             body()
         end
         for j = alg.period:-1:1
-            # if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-            #     prim_output[j] = model
-            # end
-            body = deepcopy(model_check_inner[j])
+            dump_prim(alg.chkp_dump, j, body)
+            body = deepcopy(load(body, model_check_inner, j))
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
             )
-            # if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-            #     adj_output[j] = shadowmodel
-            # end
+            dump_adj(alg.chkp_dump, j, dbody)
             if !alg.gc
                 GC.gc()
             end
         end
     end
-    # if alg.write_checkpoints
-    #     close(prim_output.fid)
-    #     close(adj_output.fid)
-    # end
     if !alg.gc
         GC.enable(true)
     end
