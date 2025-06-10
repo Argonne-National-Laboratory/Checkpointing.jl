@@ -43,14 +43,15 @@ using Enzyme
     @testset "Testing heat example" begin
         include("../examples/heat.jl")
         @testset "$scheme" for scheme in [:Revolve, :Periodic, :Online_r2]
-            steps = 500
-            snaps = 100
-            info = 0
+            @testset "$scheme with verbose=$verbose" for verbose in [0, 1]
+                steps = 500
+                snaps = 100
 
-            T, dT = heat(eval(scheme)(snaps; verbose = info), steps)
+                T, dT = heat(eval(scheme)(snaps; verbose = verbose), steps)
 
-            @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
+                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
+            end
         end
         @testset "Testing HDF5 storage using heat example" begin
             @testset "$scheme" for scheme in [:Revolve, :Periodic, :Online_r2]
