@@ -98,7 +98,7 @@ function Revolve{FT}(
         ),
     )
 
-    if verbose > 0
+    if verbose > 0 && FT != Nothing
         predfwdcnt = forwardcount(revolve)
         if predfwdcnt == -1
             error("Revolve: error returned by  revolve::forwardcount")
