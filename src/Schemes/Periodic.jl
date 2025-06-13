@@ -3,19 +3,18 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-mutable struct Periodic{MT} <: Scheme where {MT}
+mutable struct Periodic{FT} <: Scheme where {FT}
     steps::Int
     acp::Int
     period::Int
     verbose::Int
     storage::AbstractStorage
     gc::Bool
-    write_checkpoints::Bool
+    chkp_dump::Union{Nothing,ChkpDump}
 end
 
 """
     Periodic(
-        steps::Int,
         checkpoints::Int;
         storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
         verbose::Int = 0,
@@ -26,7 +25,6 @@ end
 The periodic scheme is used to store the state of the system at regular intervals
 and then restore it when needed.
 
-- `steps`: is the number of iterations to perform.
 - `checkpoints`: is the number of checkpoints used for storage.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
 - `verbose::Int`: Verbosity level for logging and diagnostics.
@@ -36,25 +34,71 @@ and then restore it when needed.
 The period will be `div(steps, checkpoints)`.
 
 """
-function Periodic{MT}(
+function Periodic{FT}(
     steps::Int,
     checkpoints::Int;
-    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
+    storage::AbstractStorage = ArrayStorage{FT}(checkpoints),
     verbose::Int = 0,
     gc::Bool = true,
     write_checkpoints::Bool = false,
-) where {MT}
+    write_checkpoints_period::Int = 1,
+    write_checkpoints_filename::String = "chkp",
+) where {FT}
     acp = checkpoints
     period = div(steps, checkpoints)
     if verbose > 0
         @info "[Checkpointing] Periodic checkpointing with $acp checkpoints and period $period"
     end
 
-    periodic = Periodic{MT}(steps, acp, period, verbose, storage, gc, write_checkpoints)
-
-    forwardcount(periodic)
-    return periodic
+    Periodic{FT}(
+        steps,
+        acp,
+        period,
+        verbose,
+        storage,
+        gc,
+        ChkpDump(
+            steps,
+            Val(write_checkpoints),
+            write_checkpoints_period,
+            write_checkpoints_filename,
+        ),
+    )
 end
+
+function Periodic(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
+    return Periodic{Nothing}(
+        0,
+        checkpoints;
+        storage = eval(storage){Nothing}(checkpoints),
+        kwargs...,
+    )
+end
+
+function instantiate(::Type{FT}, periodic::Periodic{Nothing}, steps::Int) where {FT}
+    write_checkpoints = false
+    write_checkpoints_period = 1
+    write_checkpoints_filename = "chkp"
+
+    if !isa(periodic.chkp_dump, Nothing)
+        write_checkpoints = true
+        write_checkpoints_period = periodic.chkp_dump.period
+        write_checkpoints_filename = periodic.chkp_dump.filename
+    end
+
+    return Periodic{FT}(
+        steps,
+        periodic.acp;
+        verbose = periodic.verbose,
+        storage = similar(periodic.storage, FT),
+        gc = periodic.gc,
+        write_checkpoints = write_checkpoints,
+        write_checkpoints_period = write_checkpoints_period,
+        write_checkpoints_filename = write_checkpoints_filename,
+    )
+end
+
+forwardcount(::Periodic{Nothing}) = nothing
 
 function forwardcount(periodic::Periodic)
     if periodic.acp < 0
@@ -64,68 +108,48 @@ function forwardcount(periodic::Periodic)
     end
 end
 
-function rev_checkpoint_struct_for(
+function rev_checkpoint_for(
     config,
-    body::Function,
-    alg::Periodic,
-    model_input::MT,
-    shadowmodel::MT,
+    body_input::Function,
+    dbody::Function,
+    alg::Periodic{FT},
     range,
-) where {MT}
-    model = deepcopy(model_input)
-    model_final = []
+) where {FT}
+    body = deepcopy(body_input)
     model_check_outer = alg.storage
-    model_check_inner = Array{MT}(undef, alg.period)
+    model_check_inner = ArrayStorage{FT}(alg.period)
     if !alg.gc
         GC.enable(false)
     end
-    if alg.write_checkpoints
-        prim_output = HDF5Storage{MT}(
-            alg.steps;
-            filename = "primal_$(alg.write_checkpoints_filename).h5",
-        )
-        adj_output = HDF5Storage{MT}(
-            alg.steps;
-            filename = "adjoint_$(alg.write_checkpoints_filename).h5",
-        )
-    end
     for i = 1:alg.acp
-        model_check_outer[i] = deepcopy(model)
+        save!(model_check_outer, deepcopy(body), i)
         for j = ((i-1)*alg.period):((i)*alg.period-1)
-            body(model)
+            body()
         end
     end
-    model_final = deepcopy(model)
+
     for i = alg.acp:-1:1
-        model = deepcopy(model_check_outer[i])
+        body = deepcopy(load(body, model_check_outer, i))
         for j = 1:alg.period
-            model_check_inner[j] = deepcopy(model)
-            body(model)
+            save!(model_check_inner, deepcopy(body), j)
+            body()
         end
         for j = alg.period:-1:1
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                prim_output[j] = model
-            end
-            model = deepcopy(model_check_inner[j])
+            dump_prim(alg.chkp_dump, j, body)
+            body = deepcopy(load(body, model_check_inner, j))
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
-                Const(body),
-                Duplicated(model, shadowmodel),
+                Duplicated(body, dbody),
+                Const,
             )
-            if alg.write_checkpoints && step % alg.write_checkpoints_period == 1
-                adj_output[j] = shadowmodel
-            end
+            dump_adj(alg.chkp_dump, j, dbody)
             if !alg.gc
                 GC.gc()
             end
         end
     end
-    if alg.write_checkpoints
-        close(prim_output.fid)
-        close(adj_output.fid)
-    end
     if !alg.gc
         GC.enable(true)
     end
-    return model_final
+    return nothing
 end

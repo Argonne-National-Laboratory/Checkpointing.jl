@@ -8,14 +8,14 @@ The constructor may take any number of arguments, but the first argument has to 
 
 A scheme has then to implement the reverse pass with the checkpointing scheme that will replace the for or while loop
 ```julia
-function rev_checkpoint_struct_for(
+function rev_checkpoint_for(
     body::Function,
     alg::Scheme,
     model_input::MT,
     shadowmodel::MT,
     range
 ) where {MT} end
-function rev_checkpoint_struct_while(
+function rev_checkpoint_while(
     body::Function,
     alg::Scheme,
     model_input::MT,

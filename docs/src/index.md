@@ -1,6 +1,6 @@
 # Checkpointing
 
-[Checkpointing.jl](https://github.com/Argonne-National-Laboratory/Checkpointing.jl) provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in a while or for the loop with a `UnitRange`.
+[Checkpointing.jl](https://github.com/Argonne-National-Laboratory/Checkpointing.jl) provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@ad_checkpoint`, which differentiates and checkpoints a struct used in a while or for the loop with a `UnitRange`.
 
 Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on [ChainRulesCore.jl](https://github.com/JuliaDiff/ChainRulesCore.jl) to integrate with AD tools applied to the code outside of the loop.
 
@@ -12,7 +12,6 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 * Online r=2 checkpointing for a while loops with a priori unknown number of iterations [2]
 
 ## Rules
-* [ChainRulesCore.jl](https://juliadiff.org/ChainRulesCore.jl/stable/)
 * [EnzymeRules.jl](https://enzyme.mit.edu/julia/stable/generated/custom_rule/)
 
 ## Storage

@@ -8,7 +8,7 @@
 #   https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
 # TODO: Extend Online_r2 to Online_r3
 
-mutable struct Online_r2{MT} <: Scheme where {MT}
+mutable struct Online_r2{FT} <: Scheme where {FT}
     check::Int
     capo::Int
     acp::Int
@@ -26,16 +26,16 @@ mutable struct Online_r2{MT} <: Scheme where {MT}
     ch::Vector{Int}
     ord_ch::Vector{Int}
     num_rep::Vector{Int}
-    revolve::Revolve{MT}
+    revolve::Revolve{FT}
     storage::AbstractStorage
 end
 
 """
-    Online_r2{MT}(
+    Online_r2{FT}(
         checkpoints::Int,
-        storage::AbstractStorage = ArrayStorage{MT}(checkpoints);
+        storage::AbstractStorage = ArrayStorage{FT}(checkpoints);
         verbose::Int = 0,
-    ) where {MT}
+    ) where {FT}
 
 This implements the online checkpointing scheme for `r=2` as described in the paper
 "New Algorithms for Optimal Online Checkpointing" by Philipp Stumm and Andrea Walther.
@@ -47,11 +47,11 @@ Creates a new `Online_r2` object for checkpointing.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
 
 """
-function Online_r2{MT}(
+function Online_r2{FT}(
     checkpoints::Int;
-    storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
+    storage::AbstractStorage = ArrayStorage{FT}(checkpoints),
     verbose::Int = 0,
-) where {MT}
+) where {FT}
     if checkpoints < 0
         @error("Online_r2: negative checkpoints")
     end
@@ -76,8 +76,8 @@ function Online_r2{MT}(
         ord_ch[i] = -1
         num_rep[i] = -1
     end
-    revolve = Revolve{MT}(typemax(Int64), acp; verbose = verbose)
-    online_r2 = Online_r2{MT}(
+    revolve = Revolve{FT}(typemax(Int64), acp; verbose = verbose)
+    online_r2 = Online_r2{FT}(
         check,
         capo,
         acp,
@@ -101,8 +101,24 @@ function Online_r2{MT}(
     return online_r2
 end
 
-function update_revolve(online::Online_r2{MT}, steps) where {MT}
-    online.revolve = Revolve{MT}(steps, online.acp)
+function Online_r2(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
+    return Online_r2{Nothing}(
+        checkpoints;
+        storage = eval(storage){Nothing}(checkpoints),
+        kwargs...,
+    )
+end
+
+function instantiate(::Type{FT}, online::Online_r2{Nothing}) where {FT}
+    return Online_r2{FT}(
+        online.acp;
+        storage = similar(online.storage, FT),
+        verbose = online.verbose,
+    )
+end
+
+function update_revolve(online::Online_r2{FT}, steps) where {FT}
+    online.revolve = Revolve{FT}(steps, online.acp)
     online.revolve.rwcp = online.revolve.acp - 1
     online.revolve.steps = steps
     online.revolve.acp = online.acp
@@ -222,7 +238,7 @@ function next_action!(online::Online_r2)::Action
                 online.numfwd += online.incr
                 if (online.iter == 0)
                     online.capo = online.ch[online.oldind+1]
-                    for i = 0:(online.t+1)/2
+                    for i = 0:((online.t+1)/2)
                         online.capo += online.incr
                         online.incr = online.incr + 1
                         online.iter = online.iter + 1
@@ -368,7 +384,7 @@ function next_action!(online::Online_r2)::Action
                         if online.verbose > 0
                             @info(" oldind ", online.oldind, " ind ", online.ind)
                         end
-                        for k = online.acp-1:-1:online.incr+1
+                        for k = (online.acp-1):-1:(online.incr+1)
                             online.ord_ch[k+1] = online.ord_ch[k-1+1]
                             online.ch[online.ord_ch[k+1]+1] =
                                 online.ch[online.ord_ch[k-1+1]+1]
@@ -431,20 +447,18 @@ function next_action!(online::Online_r2)::Action
     return Action(err, online.capo, online.oldcapo, -1)
 end
 
-function rev_checkpoint_struct_while(
+function rev_checkpoint_while(
     config,
-    body::Function,
-    alg::Online_r2,
-    model_input::MT,
-    shadowmodel::MT,
-    condition::Function,
-) where {MT}
-    model = deepcopy(model_input)
+    body_input::Function,
+    dbody::Function,
+    alg::Online_r2{FT},
+) where {FT}
+    body = deepcopy(body_input)
     model_check = alg.storage
-    model_final = []
-    freeindices = Stack{Int32}()
-    storemapinv = Dict{Int32,Int32}()
-    storemap = Dict{Int32,Int32}()
+    # model_final = []
+    freeindices = Stack{Int64}()
+    storemapinv = Dict{Int64,Int64}()
+    storemap = Dict{Int64,Int64}()
     check = 0
     oldcapo = 0
     onlinesteps = 0
@@ -454,11 +468,11 @@ function rev_checkpoint_struct_while(
         if (next_action.actionflag == Checkpointing.store)
             check = next_action.cpnum + 1
             storemapinv[check] = next_action.iteration
-            model_check[check] = deepcopy(model)
+            # model_check[check] = deepcopy(body)
+            save!(model_check, deepcopy(body), check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = oldcapo:(next_action.iteration-1)
-                body(model)
-                go = condition(model)
+                go = body()
                 onlinesteps = onlinesteps + 1
                 if !go
                     break
@@ -481,24 +495,29 @@ function rev_checkpoint_struct_while(
         if (next_action.actionflag == Checkpointing.store)
             check = pop!(freeindices)
             storemap[next_action.iteration-1] = check
-            model_check[check] = deepcopy(model)
+            # model_check[check] = deepcopy(body)
+            save!(model_check, deepcopy(body), check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
-                body(model)
+                body()
             end
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             # Commented out lines are weird
             # body(model)
-            model_final = deepcopy(model)
+            model_final = deepcopy(body)
             # Enzyme.autodiff(body, Duplicated(model,shadowmodel))
         elseif (next_action.actionflag == Checkpointing.uturn)
-            Enzyme.autodiff(EnzymeCore.set_runtime_activity(Reverse, config), Const(body), Duplicated(model, shadowmodel))
+            Enzyme.autodiff(
+                EnzymeCore.set_runtime_activity(Reverse, config),
+                Duplicated(body, dbody),
+                Const,
+            )
             if haskey(storemap, next_action.iteration - 1 - 1)
                 push!(freeindices, storemap[next_action.iteration-1-1])
                 delete!(storemap, next_action.iteration - 1 - 1)
             end
         elseif (next_action.actionflag == Checkpointing.restore)
-            model = deepcopy(model_check[storemap[next_action.iteration-1]])
+            body = deepcopy(load(body, model_check, storemap[next_action.iteration-1]))
         elseif next_action.actionflag == Checkpointing.done
             if haskey(storemap, next_action.iteration - 1 - 1)
                 delete!(storemap, next_action.iteration - 1 - 1)
@@ -506,5 +525,5 @@ function rev_checkpoint_struct_while(
             break
         end
     end
-    return model_final
+    return nothing
 end

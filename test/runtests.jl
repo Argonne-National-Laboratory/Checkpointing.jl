@@ -1,27 +1,15 @@
 using Test
 using Checkpointing
 using LinearAlgebra
-# All tested AD tools
-using Zygote, Enzyme
-
-abstract type ADtools end
-struct ZygoteTool <: ADtools end
-struct EnzymeTool <: ADtools end
-adtools = [ZygoteTool(), EnzymeTool()]
+using Enzyme
 
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(
-                Checkpointing.checkpoint_struct_for,
-                Tuple{Any,Any,Any,Any},
-            ),
+            Base.signature_type(Checkpointing.checkpoint_for, Tuple{Any,Any,Any}),
         )
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(
-                Checkpointing.checkpoint_struct_while,
-                Tuple{Any,Any,Any,Any},
-            ),
+            Base.signature_type(Checkpointing.checkpoint_while, Tuple{Any,Any}),
         )
         include("speelpenning.jl")
         errf, errg = main()
@@ -41,157 +29,55 @@ adtools = [ZygoteTool(), EnzymeTool()]
     end
     @testset "Testing optcontrol..." begin
         include("../examples/optcontrol.jl")
-        @testset "AD tool $adtool" for adtool in adtools
-            @testset "Revolve..." begin
-                steps = 100
-                snaps = 3
-                info = 0
+        @testset for scheme in [:Revolve, :Periodic]
+            steps = 100
+            snaps = 4
+            info = 0
 
-                revolve = Revolve{Model}(steps, snaps; verbose = info)
-                F, L, F_opt, L_opt = muoptcontrol(revolve, steps, adtool)
-                @test isapprox(F_opt, F, rtol = 1e-4)
-                @test isapprox(L_opt, L, rtol = 1e-4)
-            end
-
-            @testset "Periodic..." begin
-                steps = 100
-                snaps = 4
-                info = 0
-
-                periodic = Periodic{Model}(steps, snaps; verbose = info)
-                F, L, F_opt, L_opt = muoptcontrol(periodic, steps, adtool)
-                @test isapprox(F_opt, F, rtol = 1e-4)
-                @test isapprox(L_opt, L, rtol = 1e-4)
-            end
+            F, L, F_opt, L_opt =
+                muoptcontrol(eval(scheme)(snaps, verbose = info), steps, snaps)
+            @test isapprox(F_opt, F, rtol = 1e-4)
+            @test isapprox(L_opt, L, rtol = 1e-4)
         end
     end
     @testset "Testing heat example" begin
         include("../examples/heat.jl")
-        @testset "AD tool $adtool" for adtool in adtools
-            @testset "Revolve..." begin
-                steps = 500
-                snaps = 4
-                info = 0
-
-                revolve = Revolve{Heat}(steps, snaps; verbose = info)
-                T, dT = heat_for(revolve, steps, adtool)
-
-                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-            end
-
-            @testset "Periodic..." begin
-                steps = 500
-                snaps = 4
-                info = 0
-
-                periodic = Periodic{Heat}(steps, snaps; verbose = info)
-                T, dT = heat_for(periodic, steps, adtool)
-
-                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-            end
-
-            @testset "Online_r2..." begin
+        @testset "$scheme" for scheme in [:Revolve, :Periodic, :Online_r2]
+            @testset "$scheme with verbose=$verbose" for verbose in [0, 1]
                 steps = 500
                 snaps = 100
-                info = 0
-                online = Online_r2{Heat}(snaps; verbose = info)
-                T, dT = heat_while(online, steps, adtool)
+
+                T, dT = heat(eval(scheme)(snaps; verbose = verbose), steps)
 
                 @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
                 @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
             end
         end
         @testset "Testing HDF5 storage using heat example" begin
-            @testset "AD tool $adtool" for adtool in adtools
-                @testset "Revolve..." begin
-                    steps = 500
-                    snaps = 4
-                    info = 0
+            @testset "$scheme" for scheme in [:Revolve, :Periodic, :Online_r2]
+                steps = 500
+                snaps = 100
+                info = 0
 
-                    revolve = Revolve{Heat}(
-                        steps,
-                        snaps;
-                        storage = HDF5Storage{Heat}(snaps),
-                        verbose = info,
-                    )
-                    T, dT = heat_for(revolve, steps, adtool)
+                T, dT =
+                    heat(eval(scheme)(snaps; verbose = info, storage = :HDF5Storage), steps)
 
-                    @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-                    @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-                end
-
-                @testset "Periodic..." begin
-                    steps = 500
-                    snaps = 4
-                    info = 0
-
-                    periodic = Periodic{Heat}(
-                        steps,
-                        snaps;
-                        storage = HDF5Storage{Heat}(snaps),
-                        verbose = info,
-                    )
-                    T, dT = heat_for(periodic, steps, adtool)
-
-                    @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-                    @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-                end
-
-                @testset "Online_r2..." begin
-                    steps = 500
-                    snaps = 100
-                    info = 0
-                    online = Online_r2{Heat}(
-                        snaps;
-                        storage = HDF5Storage{Heat}(snaps),
-                        verbose = info,
-                    )
-                    T, dT = heat_while(online, steps, adtool)
-
-                    @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-                    @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
-                end
+                @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
+                @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
             end
         end
     end
     @testset "Test box model example" begin
         include("../examples/box_model.jl")
-        @testset "AD tool $(adtool)" for adtool in adtools
+        @testset "$scheme" for scheme in [:Revolve, :Periodic, :Online_r2]
+            steps = 10000
+            snaps = 500
+            info = 0
 
-            @testset "Revolve..." begin
-                steps = 10000
-                snaps = 100
-                info = 0
+            T, dT = box(eval(scheme)(snaps; verbose = info), steps)
+            @test isapprox(T, 21.41890316892692)
+            @test isapprox(dT[5], 0.00616139595759519)
 
-                revolve = Revolve{Box}(steps, snaps; verbose = info)
-                T, dT = box_for(revolve, steps, adtool)
-                @test isapprox(T, 21.41890316892692)
-                @test isapprox(dT[5], 0.00616139595759519)
-
-            end
-
-            @testset "Periodic..." begin
-                steps = 10000
-                snaps = 100
-                info = 0
-
-                periodic = Periodic{Box}(steps, snaps; verbose = info)
-                T, dT = box_for(periodic, steps, adtool)
-                @test isapprox(T, 21.41890316892692)
-                @test isapprox(dT[5], 0.00616139595759519)
-            end
-
-            @testset "Online_r2..." begin
-                steps = 10000
-                snaps = 500
-                info = 0
-                online = Online_r2{Box}(snaps; verbose = info)
-                T, dT = box_while(online, steps, adtool)
-                @test isapprox(T, 21.41890316892692)
-                @test isapprox(dT[5], 0.00616139595759519)
-            end
         end
     end
     @testset "Multilevel" begin
@@ -199,5 +85,8 @@ adtools = [ZygoteTool(), EnzymeTool()]
     end
     @testset "Test writing checkpoints out" begin
         include("output_chkp.jl")
+        @testset "$scheme" for scheme in [:Revolve, :Periodic]
+            output_chkp(scheme)
+        end
     end
 end
