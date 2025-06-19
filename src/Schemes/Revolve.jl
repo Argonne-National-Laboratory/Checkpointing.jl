@@ -421,7 +421,7 @@ function rev_checkpoint_for(
             save!(model_check, deepcopy(body), check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
-                body()
+                body(j)
             end
         elseif (next_action.actionflag == Checkpointing.firstuturn)
             # body()
@@ -434,6 +434,7 @@ function rev_checkpoint_for(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
+                Const(step)
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
@@ -446,6 +447,7 @@ function rev_checkpoint_for(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
+                Const(step)
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
