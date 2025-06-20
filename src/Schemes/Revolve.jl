@@ -434,7 +434,7 @@ function rev_checkpoint_for(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
-                Const(step)
+                Const(step),
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
@@ -447,7 +447,7 @@ function rev_checkpoint_for(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
-                Const(step)
+                Const(step),
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1

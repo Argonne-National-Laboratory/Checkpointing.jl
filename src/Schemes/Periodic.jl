@@ -141,7 +141,7 @@ function rev_checkpoint_for(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
-                Const(j)
+                Const(j),
             )
             dump_adj(alg.chkp_dump, j, dbody)
             if !alg.gc
