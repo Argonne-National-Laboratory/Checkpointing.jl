@@ -124,7 +124,7 @@ function rev_checkpoint_for(
     for i = 1:alg.acp
         save!(model_check_outer, deepcopy(body), i)
         for j = ((i-1)*alg.period):((i)*alg.period-1)
-            body()
+            body(j)
         end
     end
 
@@ -132,7 +132,7 @@ function rev_checkpoint_for(
         body = deepcopy(load(body, model_check_outer, i))
         for j = 1:alg.period
             save!(model_check_inner, deepcopy(body), j)
-            body()
+            body(j)
         end
         for j = alg.period:-1:1
             dump_prim(alg.chkp_dump, j, body)
@@ -141,6 +141,7 @@ function rev_checkpoint_for(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
+                Const(j),
             )
             dump_adj(alg.chkp_dump, j, dbody)
             if !alg.gc

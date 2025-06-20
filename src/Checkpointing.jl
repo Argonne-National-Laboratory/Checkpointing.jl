@@ -86,8 +86,8 @@ include("Schemes/Periodic.jl")
 include("Schemes/Online_r2.jl")
 
 function checkpoint_for(body::Function, scheme::Scheme, range)
-    for gensym() in range
-        body()
+    for i in range
+        body(i)
     end
     return nothing
 end
@@ -113,9 +113,12 @@ not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
 `loop` expression.
 """
 macro ad_checkpoint(alg, loop)
+    range = loop.args[1].args[2]
+    _iterator = loop.args[1].args[1]
     body = loop.args[2]
-    # Anonymous loop body function
-    fbody = gensym()
+    i = gensym()
+    fbody = gensym("fbody")
+    wbody = gensym("wbody")
     if loop.head == :for
         range = loop.args[1].args[2]
         ex = quote
@@ -125,18 +128,21 @@ macro ad_checkpoint(alg, loop)
                         "Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($range)) is not supported.",
                     )
                 end
-                $fbody = () -> $body
+                $fbody = $i -> begin
+                    $_iterator = $i
+                    $body
+                end
                 Checkpointing.checkpoint_for($fbody, $alg, $range)
             end
         end
     elseif loop.head == :while
         ex = quote
-            $fbody = () -> begin
+            $wbody = () -> begin
                 $body
                 # return loop condition
                 return $(loop.args[1])
             end
-            Checkpointing.checkpoint_while($fbody, $alg)
+            Checkpointing.checkpoint_while($wbody, $alg)
         end
     else
         error("Checkpointing.jl: Unknown loop construct.")
