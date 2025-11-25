@@ -64,7 +64,7 @@ end
 
 function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
     # AD: Create shadow copy for derivatives
-    @checkpoint_struct chkpscheme heat for i in 1:tsteps
+    @ad_checkpoint chkpscheme heat for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
