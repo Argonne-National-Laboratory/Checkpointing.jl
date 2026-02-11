@@ -12,20 +12,20 @@ mutable struct Heat
     tsteps::Int
 end
 
-function advance(heat::Heat)
+function advance(heat)
     next = heat.Tnext
     last = heat.Tlast
     λ = heat.λ
     n = heat.n
-    for i = 2:(n-1)
-        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
+    for i in 2:(n-1)
+        next[i] = last[i] + λ*(last[i-1]-2*last[i]+last[i+1])
     end
     return nothing
 end
 
 
-function sumheat(heat::Heat, scheme::Union{Revolve,Periodic}, tsteps::Int64)
-    @ad_checkpoint scheme for i = 1:tsteps
+function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+    @ad_checkpoint chkpscheme for i in 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -34,8 +34,8 @@ end
 
 function heat(scheme::Scheme, tsteps::Int)
     n = 100
-    Δx = 0.1
-    Δt = 0.001
+    Δx=0.1
+    Δt=0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -45,18 +45,12 @@ function heat(scheme::Scheme, tsteps::Int)
     dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
-    heat.Tnext[1] = 20.0
+    heat.Tnext[1]   = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(
-        Enzyme.ReverseWithPrimal,
-        sumheat,
-        Duplicated(heat, dheat),
-        Const(scheme),
-        Const(tsteps),
-    )
+    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
 
     return heat.Tnext, dheat.Tnext[2:(end-1)]
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">heat (generic function with 1 method)</code></pre><p>Plot function values:</p><pre><code class="language-julia hljs">tsteps = 500
-T, dT = heat(Revolve(4), tsteps)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([20.0, 19.28670708893302, 18.5762559822926, 17.865804875652184, 17.163811520281293, 16.461818164910405, 15.773698196009292, 15.085578227108181, 14.416422194357889, 13.747266161607596  …  0.0010844643164675824, 0.0008681767992163476, 0.0007135124080400669, 0.0005588480168637862, 0.000445160866081522, 0.00033147371529925775, 0.0002427191223882328, 0.00015396452947720788, 7.698226473860394e-5, 0.0], [0.0356607964401121, 0.07117950265889618, 0.10669762026127153, 0.14179285030017058, 0.17688683371117586, 0.2112871477986924, 0.24568541302418895, 0.27913548144214495, 0.31258246870379675, 0.3448485923782427  …  0.3448485923782427, 0.31258246870379675, 0.27913548144214495, 0.24568541302418895, 0.2112871477986924, 0.17688683371117586, 0.14179285030017058, 0.10669762026127153, 0.07117950265889618, 0.0356607964401121])</code></pre><p>Plot gradient with respect to sum(T):</p><pre><code class="language-julia hljs">plot(dT)</code></pre><img src="0d7639c6.svg" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../schemes/">Schemes »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Wednesday 11 February 2026 21:07">Wednesday 11 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+T, dT = heat(Revolve(4), tsteps)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">([20.0, 19.28670708893302, 18.5762559822926, 17.865804875652184, 17.163811520281293, 16.461818164910405, 15.773698196009292, 15.085578227108181, 14.416422194357889, 13.747266161607596  …  0.0010844643164675824, 0.0008681767992163476, 0.0007135124080400669, 0.0005588480168637862, 0.000445160866081522, 0.00033147371529925775, 0.0002427191223882328, 0.00015396452947720788, 7.698226473860394e-5, 0.0], [0.0356607964401121, 0.07117950265889618, 0.10669762026127153, 0.14179285030017058, 0.17688683371117586, 0.2112871477986924, 0.24568541302418895, 0.27913548144214495, 0.31258246870379675, 0.3448485923782427  …  0.3448485923782427, 0.31258246870379675, 0.27913548144214495, 0.24568541302418895, 0.2112871477986924, 0.17688683371117586, 0.14179285030017058, 0.10669762026127153, 0.07117950265889618, 0.0356607964401121])</code></pre><p>Plot gradient with respect to sum(T):</p><pre><code class="language-julia hljs">plot(dT)</code></pre><img src="3e8b1ee6.svg" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../schemes/">Schemes »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Wednesday 11 February 2026 21:11">Wednesday 11 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
