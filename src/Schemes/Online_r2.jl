@@ -158,14 +158,8 @@ function next_action!(online::Online_r2)::Action
     if online.verbose > 0
         if (online.check != -1)
             @info(online.check + 1, online.ch[online.check+1], online.capo)
-            for i = 1:online.acp
-                println("online.ch[", i, "] =", online.ch[i])
-            end
         else
             @info(online.check, online.capo)
-            for i = 1:online.acp
-                println("online.ch[", i, "] =", online.ch[i])
-            end
         end
     end
     online.numcmd += 1
