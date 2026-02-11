@@ -86,9 +86,13 @@ function instantiate(::Type{FT}, periodic::Periodic{Nothing}, steps::Int) where 
         write_checkpoints_filename = periodic.chkp_dump.filename
     end
 
+    checkpoints = min(periodic.acp, steps)
+    if checkpoints < periodic.acp
+        @warn "Number of checkpoints ($(periodic.acp)) exceeds number of steps ($steps). Using $checkpoints checkpoints."
+    end
     return Periodic{FT}(
         steps,
-        periodic.acp;
+        checkpoints;
         verbose = periodic.verbose,
         storage = similar(periodic.storage, FT),
         gc = periodic.gc,

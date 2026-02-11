@@ -131,9 +131,13 @@ function instantiate(::Type{FT}, revolve::Revolve{Nothing}, steps::Int) where {F
         write_checkpoints_period = revolve.chkp_dump.period
         write_checkpoints_filename = revolve.chkp_dump.filename
     end
+    checkpoints = min(revolve.acp, steps)
+    if checkpoints < revolve.acp
+        @warn "Number of checkpoints ($(revolve.acp)) exceeds number of steps ($steps). Using $checkpoints checkpoints."
+    end
     return Revolve{FT}(
         steps,
-        revolve.acp;
+        checkpoints;
         storage = similar(revolve.storage, FT),
         verbose = revolve.verbose,
         gc = revolve.gc,
