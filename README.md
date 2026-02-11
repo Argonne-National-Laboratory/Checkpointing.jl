@@ -3,7 +3,7 @@
 [![][docs-stable-img]][docs-stable-url] 
 [![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
 
-This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@checkpoint_struct`, which differentiates and checkpoints a struct used in a while or for the loop with a `UnitRange`.
+This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@ad_checkpoint`, which differentiates and checkpoints a mutable struct used in a while or for loop with a `UnitRange`.
 
 Each loop iteration is differentiated using [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl). We rely on external differentiation rule systems to integrate with AD tools applied to the code outside of the loop.
 
@@ -15,7 +15,6 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 * Online r=2 checkpointing for while loops with a priori unknown number of iterations [2]
 
 ## Rules
-* [ChainRulesCore.jl](https://juliadiff.org/ChainRulesCore.jl/stable/)
 * [EnzymeRules.jl](https://enzyme.mit.edu/julia/stable/generated/custom_rule/)
 
 ## Storage
@@ -34,7 +33,7 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 
 ## Usage: Example 1D heat equation
 
-We present an example of a differentiated explicit 1D heat equation. Notice that the heat equation is a linear differential equation and does not require adjoint checkpointing. This example only illustrates the Checkpointing.jl API. The macro `@checkpointing_struct` covers the transformation of `for` loops with `UnitRange` ranges where `tsteps=500` is the number of time steps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
+We present an example of a differentiated explicit 1D heat equation. Notice that the heat equation is a linear differential equation and does not require adjoint checkpointing. This example only illustrates the Checkpointing.jl API. The macro `@ad_checkpoint` covers the transformation of `for` loops with `UnitRange` ranges where `tsteps=500` is the number of time steps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
 
 ```julia
 # Explicit 1D heat equation
@@ -50,21 +49,21 @@ mutable struct Heat
     tsteps::Int
 end
 
-function advance(heat)
+function advance(heat::Heat)
     next = heat.Tnext
     last = heat.Tlast
     λ = heat.λ
     n = heat.n
-    for i in 2:(n-1)
-        next[i] = last[i] + λ*(last[i-1]-2*last[i]+last[i+1])
+    for i = 2:(n-1)
+        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
     end
     return nothing
 end
 
 
-function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
+function sumheat(heat::Heat, scheme::Union{Revolve,Periodic}, tsteps::Int64)
     # AD: Create shadow copy for derivatives
-    @ad_checkpoint chkpscheme heat for i in 1:tsteps
+    @ad_checkpoint scheme for i = 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -73,8 +72,8 @@ end
 
 function heat(scheme::Scheme, tsteps::Int)
     n = 100
-    Δx=0.1
-    Δt=0.001
+    Δx = 0.1
+    Δt = 0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -84,21 +83,28 @@ function heat(scheme::Scheme, tsteps::Int)
     dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
-    heat.Tnext[1]   = 20.0
+    heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
+    autodiff(
+        Enzyme.ReverseWithPrimal,
+        sumheat,
+        Duplicated(heat, dheat),
+        Const(scheme),
+        Const(tsteps),
+    )
 
-    return heat.Tnext, dheat.Tnext[2:end-1]
+    return heat.Tnext, dheat.Tnext[2:(end-1)]
 end
 tsteps = 500
-T, dT = heat(Revolve{Heat}(tsteps,4), tsteps)
+T, dT = heat(Revolve(4), tsteps)
 # Plot function values
 plot(T)
 # Plot gradient with respect of sum(T[end]) with respect to T[1].
 plot(dT)
 ```
+
 ## Future
 
 The following features are planned for development:
