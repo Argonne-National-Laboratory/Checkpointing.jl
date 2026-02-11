@@ -6,7 +6,7 @@ import EnzymeCore
 # Floating-point scalar types that can cause activity analysis issues when captured
 # in closures alongside mutable structs. Integer types are always inactive in AD,
 # so they don't cause the same problem.
-const PROBLEMATIC_SCALAR_TYPES = Union{Float16, Float32, Float64}
+const PROBLEMATIC_SCALAR_TYPES = Union{Float16,Float32,Float64}
 
 """
     check_closure_captures(body)
@@ -28,7 +28,7 @@ function check_closure_captures(body)
         if isa(field, Core.Box)
             error(
                 "[Checkpointing.jl]: Variable `$name` is reassigned inside the loop. " *
-                    "Please make sure that `$name` is only modified in-place.",
+                "Please make sure that `$name` is only modified in-place.",
             )
         elseif ftype <: PROBLEMATIC_SCALAR_TYPES
             push!(scalar_vars, string(name))
@@ -45,20 +45,20 @@ function check_closure_captures(body)
         struct_list = join(["`$v`" for v in struct_vars], ", ")
         error(
             "[Checkpointing.jl]: The loop body captures floating-point variable(s) $scalar_list " *
-                "alongside mutable struct(s) $struct_list.\n" *
-                "This causes Enzyme activity analysis errors.\n\n" *
-                "Solution: Store these values as fields in your mutable struct instead of " *
-                "capturing them as separate variables.\n\n" *
-                "Example - instead of:\n" *
-                "    h = 0.1\n" *
-                "    @ad_checkpoint scheme for i in 1:n\n" *
-                "        model.t += h  # ERROR: h captured from outer scope\n" *
-                "    end\n\n" *
-                "Use:\n" *
-                "    model.h = 0.1  # store in struct\n" *
-                "    @ad_checkpoint scheme for i in 1:n\n" *
-                "        model.t += model.h  # OK: access through struct\n" *
-                "    end"
+            "alongside mutable struct(s) $struct_list.\n" *
+            "This causes Enzyme activity analysis errors.\n\n" *
+            "Solution: Store these values as fields in your mutable struct instead of " *
+            "capturing them as separate variables.\n\n" *
+            "Example - instead of:\n" *
+            "    h = 0.1\n" *
+            "    @ad_checkpoint scheme for i in 1:n\n" *
+            "        model.t += h  # ERROR: h captured from outer scope\n" *
+            "    end\n\n" *
+            "Use:\n" *
+            "    model.h = 0.1  # store in struct\n" *
+            "    @ad_checkpoint scheme for i in 1:n\n" *
+            "        model.t += model.h  # OK: access through struct\n" *
+            "    end",
         )
     end
 end
@@ -87,7 +87,7 @@ function reverse(
     ::Const{typeof(Checkpointing.checkpoint_for)},
     dret::Type{<:Const},
     tape,
-        body::Union{Const, Duplicated, MixedDuplicated},
+    body::Union{Const,Duplicated,MixedDuplicated},
     alg,
     range,
 )
@@ -104,8 +104,8 @@ function reverse(
         # If check_closure_captures didn't error, give a generic message
         error(
             "[Checkpointing.jl]: The loop body was marked as Const by Enzyme, " *
-                "but checkpointing requires an active (Duplicated) closure. " *
-                "Make sure your loop body captures a mutable struct that is being differentiated."
+            "but checkpointing requires an active (Duplicated) closure. " *
+            "Make sure your loop body captures a mutable struct that is being differentiated.",
         )
     else
         error("Checkpointing.jl: Unknown annotation type for body: $(typeof(body))")
@@ -138,7 +138,7 @@ function reverse(
     ::Const{typeof(Checkpointing.checkpoint_while)},
     dret::Type{<:Const},
     tape,
-        body::Union{Const, Duplicated, MixedDuplicated},
+    body::Union{Const,Duplicated,MixedDuplicated},
     alg,
 )
     (body_input,) = tape
@@ -154,8 +154,8 @@ function reverse(
         # If check_closure_captures didn't error, give a generic message
         error(
             "[Checkpointing.jl]: The loop body was marked as Const by Enzyme, " *
-                "but checkpointing requires an active (Duplicated) closure. " *
-                "Make sure your loop body captures a mutable struct that is being differentiated."
+            "but checkpointing requires an active (Duplicated) closure. " *
+            "Make sure your loop body captures a mutable struct that is being differentiated.",
         )
     else
         error("Checkpointing.jl: Unknown annotation type for body: $(typeof(body))")
