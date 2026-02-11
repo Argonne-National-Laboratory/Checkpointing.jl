@@ -157,7 +157,7 @@ function next_action!(online::Online_r2)::Action
     actionflag = none
     if online.verbose > 0
         if (online.check != -1)
-            @info(online.check + 1, online.ch[online.check+1], online.capo)
+            @info(online.check + 1, online.ch[online.check + 1], online.capo)
         else
             @info(online.check, online.capo)
         end

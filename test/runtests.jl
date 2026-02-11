@@ -43,7 +43,7 @@ using Enzyme
     @testset "Testing heat example" begin
         include("../examples/heat.jl")
         @testset "$scheme" for scheme in [:Revolve, :Periodic, :Online_r2]
-            @testset "$scheme with verbose=$verbose" for verbose in [0,]
+            @testset "$scheme with verbose=$verbose" for verbose in [0]
                 steps = 500
                 snaps = 100
 
