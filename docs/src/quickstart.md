@@ -16,20 +16,20 @@ mutable struct Heat
     tsteps::Int
 end
 
-function advance(heat)
+function advance(heat::Heat)
     next = heat.Tnext
     last = heat.Tlast
     λ = heat.λ
     n = heat.n
-    for i in 2:(n-1)
-        next[i] = last[i] + λ*(last[i-1]-2*last[i]+last[i+1])
+    for i = 2:(n-1)
+        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
     end
     return nothing
 end
 
 
-function sumheat(heat::Heat, chkpscheme::Scheme, tsteps::Int64)
-    @ad_checkpoint chkpscheme for i in 1:tsteps
+function sumheat(heat::Heat, scheme::Union{Revolve,Periodic}, tsteps::Int64)
+    @ad_checkpoint scheme for i = 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
     end
@@ -38,8 +38,8 @@ end
 
 function heat(scheme::Scheme, tsteps::Int)
     n = 100
-    Δx=0.1
-    Δt=0.001
+    Δx = 0.1
+    Δt = 0.001
     # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
@@ -49,11 +49,17 @@ function heat(scheme::Scheme, tsteps::Int)
     dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
     # Boundary conditions
-    heat.Tnext[1]   = 20.0
+    heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
     # Compute gradient
-    autodiff(Enzyme.ReverseWithPrimal, sumheat, Duplicated(heat, dheat), Const(scheme), Const(tsteps))
+    autodiff(
+        Enzyme.ReverseWithPrimal,
+        sumheat,
+        Duplicated(heat, dheat),
+        Const(scheme),
+        Const(tsteps),
+    )
 
     return heat.Tnext, dheat.Tnext[2:(end-1)]
 end
