@@ -67,7 +67,7 @@ function muoptcontrol(scheme, steps, snaps, verbose = 0)
         @ad_checkpoint scheme for i = 1:steps
             model.F_H .= model.F
             advance(model)
-            model.t += h
+            model.t += model.h
         end
         return model.F[2]
     end
