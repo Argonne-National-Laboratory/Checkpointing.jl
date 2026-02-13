@@ -72,7 +72,7 @@ allowscalar(true)
             bmodel = Model(CUDA.zeros(2), CUDA.zeros(2), 0.0, 0.0)
 
             function foo(model::Model)
-                @ad_checkpoint scheme for i in 1:steps
+                @ad_checkpoint scheme for i = 1:steps
                     model.F_H .= model.F
                     advance(model)
                     model.t += model.h
@@ -81,8 +81,8 @@ allowscalar(true)
             end
             autodiff(Enzyme.Reverse, Const(foo), Duplicated(model, bmodel))
 
-            F_opt = Array{Float64, 1}(undef, 2)
-            L_opt = Array{Float64, 1}(undef, 2)
+            F_opt = Array{Float64,1}(undef, 2)
+            L_opt = Array{Float64,1}(undef, 2)
             opt_sol(F_opt, 1.0)
             opt_lambda(L_opt, 0.0)
             return Array(model.F), Array(bmodel.F), F_opt, L_opt
@@ -104,7 +104,10 @@ allowscalar(true)
             Tbar = [20.0; 1.0; 1.0]
             Sbar = [35.5; 34.5; 34.5]
 
-            box_model = adapt(CuArray, Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0))
+            box_model = adapt(
+                CuArray,
+                Box(copy([Tbar; Sbar]), copy([Tbar; Sbar]), zeros(6), zeros(6), 0),
+            )
             dbox = adapt(CuArray, Box(zeros(6), zeros(6), zeros(6), zeros(6), 0))
 
             autodiff(

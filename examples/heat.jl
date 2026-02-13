@@ -16,9 +16,9 @@ function Adapt.adapt_structure(to, heat::Heat)
 end
 
 function advance(heat::Heat)
-    heat.Tnext[2:(end - 1)] .= heat.Tlast[2:(end - 1)] .+ heat.λ .* (
-        heat.Tlast[1:(end - 2)] .- 2 .* heat.Tlast[2:(end - 1)] .+ heat.Tlast[3:end]
-    )
+    heat.Tnext[2:(end-1)] .=
+        heat.Tlast[2:(end-1)] .+
+        heat.λ .* (heat.Tlast[1:(end-2)] .- 2 .* heat.Tlast[2:(end-1)] .+ heat.Tlast[3:end])
     return nothing
 end
 

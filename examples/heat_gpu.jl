@@ -37,5 +37,5 @@ function heat_gpu(scheme::Scheme, tsteps::Int; arraytype = nothing)
         Const(tsteps),
     )
 
-    return Array(heat_model.Tnext), Array(dheat.Tnext[2:(end - 1)])
+    return Array(heat_model.Tnext), Array(dheat.Tnext[2:(end-1)])
 end

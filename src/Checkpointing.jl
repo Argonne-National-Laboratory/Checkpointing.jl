@@ -97,8 +97,8 @@ function _check_gpu_fields(x)
     is_gpu_array(x) && throw(
         ArgumentError(
             "GPU arrays are not supported with HDF5Storage or ChkpDump serialization. " *
-                "Use ArrayStorage instead."
-        )
+            "Use ArrayStorage instead.",
+        ),
     )
     return if ismutable(x) && !isa(x, AbstractArray)
         for name in fieldnames(typeof(x))
