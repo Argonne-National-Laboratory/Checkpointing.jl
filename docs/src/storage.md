@@ -25,3 +25,9 @@ Base.save!(body::MT, storage::MyStorage{MT}, value, i::Int) where {MT}
 Base.size(storage::MyStorage{MT}) where {MT}
 Base.ndims(storage::MyStorage{MT}) where {MT}
 ```
+
+## GPU Compatibility
+
+**ArrayStorage** supports closures containing GPU arrays (e.g., `CuArray`, `ROCArray`). The GPU arrays remain on the device — only Julia wrapper objects are stored in the CPU-side array.
+
+**HDF5Storage** does **not** support GPU arrays. It relies on `Serialization.serialize`, which cannot handle GPU device pointers. If a closure containing GPU arrays is passed to `HDF5Storage`, an `ArgumentError` is thrown with a message recommending `ArrayStorage` instead.

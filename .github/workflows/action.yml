@@ -34,6 +34,27 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
+
+  test-gpu:
+    name: GPU Tests
+    env:
+      CHECKPOINTING_GPU_TESTS: "1"
+    runs-on: [self-hosted, linux, X64, gpu, cuda]
+    strategy:
+      matrix:
+        julia-version: ['lts', '1']
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: ${{ matrix.julia-version }}
+      - name: Add CUDA.jl to test environment
+        run: |
+          julia --project=test -e 'using Pkg; Pkg.add("CUDA")'
+      - uses: julia-actions/julia-buildpkg@latest
+      - uses: julia-actions/julia-runtest@latest
+
   docs:
     name: Build documentation
     env:

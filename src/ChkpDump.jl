@@ -14,6 +14,9 @@ dump_prim(::Nothing, _, _) = nothing
 
 function dump_prim(chkp::ChkpDump, step, primal)
     if (step - 1) % chkp.period == 0
+        if isa(primal, Function)
+            check_no_gpu_arrays(primal)
+        end
         blob = serialize(primal)
         open("prim_$(chkp.filename)_$step.chkp", "w") do file
             write(file, blob)
@@ -25,6 +28,9 @@ dump_adj(::Nothing, _, _) = nothing
 
 function dump_adj(chkp::ChkpDump, step, adjoint)
     if (step - 1) % chkp.period == 0
+        if isa(adjoint, Function)
+            check_no_gpu_arrays(adjoint)
+        end
         blob = serialize(adjoint)
         open("adj_$(chkp.filename)_$step.chkp", "w") do file
             write(file, blob)

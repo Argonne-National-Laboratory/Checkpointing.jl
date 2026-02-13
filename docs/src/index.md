@@ -15,16 +15,16 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 * [EnzymeRules.jl](https://enzyme.mit.edu/julia/stable/generated/custom_rule/)
 
 ## Storage
-* ArrayStorage: Stores all checkpoints values in an array of type `Array`
-* HDF5Storage: Stores all checkpoints values in an HDF5 file
+* ArrayStorage: Stores all checkpoints values in an array of type `Array` (supports GPU arrays)
+* HDF5Storage: Stores all checkpoints values in an HDF5 file (CPU only)
+
+## GPU Support
+Checkpointing.jl supports GPU arrays from CUDA.jl, AMDGPU.jl, and oneAPI.jl via [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) and [Adapt.jl](https://github.com/JuliaGPU/Adapt.jl). Parameterize your structs with the array type, define `Adapt.adapt_structure`, and use broadcasting in loop bodies. See the [Quick Start](@ref) guide for a GPU example.
+
 ## Limitations
 * Currently, the package only supports `UnitRange` ranges in `for` loops. We will add range types on a per-need basis. Please, open an issue if you need support for a specific range type.
 * We only support Enzyme as the differentiation tool of the loop body. This is due to our strict requirement for a mutation-enabled AD tool in our projects. However, there is no fundamental reason why we could not support other AD tools. Please, open an issue if you need support for a specific AD tool.
 * We don't support any activity analysis. This implies that loop iterators have to be part of the checkpointed struct if they are used in the loop body. Currently, we store the entire struct at each checkpoint. This is not necessary, and we will add support for storing only the required fields in the future.
-## Future
-The following features are planned for development:
-
-* Support checkpoints on GPUs
 ## Quick Start
 
 

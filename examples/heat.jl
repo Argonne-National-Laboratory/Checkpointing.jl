@@ -1,23 +1,24 @@
 # Explicit 1D heat equation
 using Checkpointing
 using Enzyme
+using Adapt
 
-mutable struct Heat
-    Tnext::Vector{Float64}
-    Tlast::Vector{Float64}
+mutable struct Heat{T}
+    Tnext::T
+    Tlast::T
     n::Int
     λ::Float64
     tsteps::Int
 end
 
+function Adapt.adapt_structure(to, heat::Heat)
+    return Heat(adapt(to, heat.Tnext), adapt(to, heat.Tlast), heat.n, heat.λ, heat.tsteps)
+end
+
 function advance(heat::Heat)
-    next = heat.Tnext
-    last = heat.Tlast
-    λ = heat.λ
-    n = heat.n
-    for i = 2:(n-1)
-        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
-    end
+    heat.Tnext[2:(end-1)] .=
+        heat.Tlast[2:(end-1)] .+
+        heat.λ .* (heat.Tlast[1:(end-2)] .- 2 .* heat.Tlast[2:(end-1)] .+ heat.Tlast[3:end])
     return nothing
 end
 

@@ -89,4 +89,16 @@ using Enzyme
             output_chkp(scheme)
         end
     end
+    if haskey(ENV, "CHECKPOINTING_GPU_TESTS")
+        try
+            using CUDA
+            if CUDA.functional()
+                include("gpu_tests.jl")
+            else
+                @info "CUDA not functional, skipping GPU tests"
+            end
+        catch e
+            @info "CUDA.jl not available, skipping GPU tests" exception = e
+        end
+    end
 end

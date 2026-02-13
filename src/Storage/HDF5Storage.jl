@@ -42,6 +42,9 @@ end
 
 function save!(storage::HDF5Storage{MT}, v::MT, i::Int64) where {MT}
     @assert i >= 1 && i <= storage.acp
+    if isa(v, Function)
+        check_no_gpu_arrays(v)
+    end
     if haskey(storage.fid, "$i")
         delete_object(storage.fid, "$i")
     end
