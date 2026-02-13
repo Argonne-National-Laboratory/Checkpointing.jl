@@ -1,9 +1,15 @@
 using Enzyme
-mutable struct Model
-    F::Vector{Float64}
-    F_H::Vector{Float64}
+using Adapt
+
+mutable struct Model{T}
+    F::T
+    F_H::T
     t::Float64
     h::Float64
+end
+
+function Adapt.adapt_structure(to, model::Model)
+    Model(adapt(to, model.F), adapt(to, model.F_H), model.t, model.h)
 end
 
 function func_U(t)
@@ -12,8 +18,10 @@ function func_U(t)
 end
 
 function func(F, X, t)
-    F[2] = X[1] * X[1] + 0.5 * (func_U(t) * func_U(t))
-    F[1] = 0.5 * X[1] + func_U(t)
+    u = func_U(t)
+    x1 = X[1]
+    F[2] = x1 * x1 + 0.5 * (u * u)
+    F[1] = 0.5 * x1 + u
     return nothing
 end
 
@@ -23,11 +31,9 @@ function advance(model)
     t = model.t
     h = model.h
     func(F, F_H, t)
-    F[1] = F_H[1] + h / 2.0 * F[1]
-    F[2] = F_H[2] + h / 2.0 * F[2]
+    F .= F_H .+ (h / 2.0) .* F
     func(F, F, t + h / 2.0)
-    model.F[1] = F_H[1] + h * F[1]
-    model.F[2] = F_H[2] + h * F[2]
+    model.F .= F_H .+ h .* F
     return nothing
 end
 

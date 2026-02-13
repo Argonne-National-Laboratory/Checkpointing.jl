@@ -1,3 +1,5 @@
+using Adapt
+
 const blength = [5000.0e5; 1000.0e5; 5000.0e5]   ## north-south size of boxes, centimeters
 
 const bdepth = [1.0e5; 5.0e5; 4.0e5]   ## depth of boxes, centimeters
@@ -61,15 +63,9 @@ end
 #       Output: rho
 
 function rho_func(state)
-
-    rho = zeros(3)
-
-    rho[1] = -alpha * state[1] + beta * state[4]
-    rho[2] = -alpha * state[2] + beta * state[5]
-    rho[3] = -alpha * state[3] + beta * state[6]
-
-    return rho
-
+    T = @view state[1:3]
+    S = @view state[4:6]
+    return .-alpha .* T .+ beta .* S
 end
 
 # lastly our timestep function
@@ -81,8 +77,7 @@ end
 
 function timestep_func(fld_now, fld_old, u, dt)
 
-    temp = zeros(6)
-    fld_new = zeros(6)
+    temp = zero(fld_now)
 
     # first computing the time derivatives of the various temperatures and salinities
     if u > 0
@@ -108,32 +103,31 @@ function timestep_func(fld_now, fld_old, u, dt)
     end
 
     # update fldnew using a version of Euler's method
-
-    for j = 1:6
-        fld_new[j] = fld_old[j] + 2.0 * dt * temp[j]
-    end
+    fld_new = fld_old .+ 2.0 .* dt .* temp
 
     return fld_new
 end
 
-mutable struct Box
-    in_now::Vector{Float64}
-    in_old::Vector{Float64}
-    out_now::Vector{Float64}
-    out_old::Vector{Float64}
+mutable struct Box{T}
+    in_now::T
+    in_old::T
+    out_now::T
+    out_old::T
     i::Int
+end
+
+function Adapt.adapt_structure(to, box::Box)
+    Box(adapt(to, box.in_now), adapt(to, box.in_old),
+        adapt(to, box.out_now), adapt(to, box.out_old), box.i)
 end
 
 function forward_func_4_AD(in_now, in_old, out_old, out_now)
     rho_now = rho_func(in_now)                             ## compute density
     u_now = U_func(rho_now)                                ## compute transport
     in_new = timestep_func(in_now, in_old, u_now, 10 * day)  ## compute new state values
-    for j = 1:6
-        in_now[j] =
-            in_now[j] + robert_filter_coeff * (in_new[j] - 2.0 * in_now[j] + in_old[j])
-    end
-    out_old[:] = in_now
-    out_now[:] = in_new
+    in_now .= in_now .+ robert_filter_coeff .* (in_new .- 2.0 .* in_now .+ in_old)
+    out_old .= in_now
+    out_now .= in_new
     return nothing
 end
 
@@ -145,8 +139,8 @@ end
 function timestepper(box::Box, scheme::Union{Revolve,Periodic}, tsteps::Int)
     @ad_checkpoint scheme for i = 1:tsteps
         advance(box)
-        box.in_now[:] = box.out_old
-        box.in_old[:] = box.out_now
+        box.in_now .= box.out_old
+        box.in_old .= box.out_now
     end
     return box.out_now[1]
 end
@@ -155,8 +149,8 @@ function timestepper(box::Box, scheme::Union{Online_r2}, tsteps::Int)
     box.i = 1
     @ad_checkpoint scheme while box.i <= tsteps
         advance(box)
-        box.in_now[:] = box.out_old
-        box.in_old[:] = box.out_now
+        box.in_now .= box.out_old
+        box.in_old .= box.out_now
         box.i += one(box.i)
     end
     return box.out_now[1]

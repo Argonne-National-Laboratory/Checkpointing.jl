@@ -4,6 +4,8 @@ using LinearAlgebra
 using DataStructures
 using Serialization
 using HDF5
+using Adapt
+using KernelAbstractions: get_backend, GPU
 
 """
     Scheme
@@ -75,6 +77,45 @@ end
 
 
 abstract type AbstractStorage end
+
+"""
+    is_gpu_array(x) -> Bool
+
+Return `true` if `x` is a GPU array (CuArray, ROCArray, oneArray, etc.).
+Uses KernelAbstractions.jl's `get_backend` to detect GPU arrays.
+"""
+is_gpu_array(x::AbstractArray) = get_backend(x) isa GPU
+is_gpu_array(::Any) = false
+
+"""
+    _check_gpu_fields(x)
+
+Recursively check whether `x` or any of its fields contain GPU arrays.
+Throws an `ArgumentError` if a GPU array is found.
+"""
+function _check_gpu_fields(x)
+    is_gpu_array(x) && throw(ArgumentError(
+        "GPU arrays are not supported with HDF5Storage or ChkpDump serialization. " *
+        "Use ArrayStorage instead."
+    ))
+    if ismutable(x) && !isa(x, AbstractArray)
+        for name in fieldnames(typeof(x))
+            _check_gpu_fields(getfield(x, name))
+        end
+    end
+end
+
+"""
+    check_no_gpu_arrays(body::Function)
+
+Walk the captured fields of a closure to detect GPU arrays. Throws an
+`ArgumentError` if any are found.
+"""
+function check_no_gpu_arrays(body::Function)
+    for name in fieldnames(typeof(body))
+        _check_gpu_fields(getfield(body, name))
+    end
+end
 
 include("Storage/ArrayStorage.jl")
 include("Storage/HDF5Storage.jl")
