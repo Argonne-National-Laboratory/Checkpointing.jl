@@ -24,6 +24,13 @@ HDF5Storage
 
 ```
 
+## GPU Utilities
+```@docs
+is_gpu_array
+check_no_gpu_arrays
+
+```
+
 ## Developer variables for implementing new schemes
 ```@docs
 Scheme

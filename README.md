@@ -1,6 +1,6 @@
-# Checkpointing 
+# Checkpointing
 [![CI](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions/workflows/action.yml/badge.svg?branch=main)](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions/workflows/action.yml)
-[![][docs-stable-img]][docs-stable-url] 
+[![][docs-stable-img]][docs-stable-url]
 [![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
 
 This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@ad_checkpoint`, which differentiates and checkpoints a mutable struct used in a while or for loop with a `UnitRange`.
@@ -18,8 +18,8 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 * [EnzymeRules.jl](https://enzyme.mit.edu/julia/stable/generated/custom_rule/)
 
 ## Storage
-* ArrayStorage: Stores all checkpoints values in an array of type `Array`
-* HDF5Storage: Stores all checkpoints values in an HDF5 file
+* ArrayStorage: Stores all checkpoints values in an array of type `Array` (supports GPU arrays)
+* HDF5Storage: Stores all checkpoints values in an HDF5 file (CPU only)
 
 ## Installation
 
@@ -39,30 +39,28 @@ We present an example of a differentiated explicit 1D heat equation. Notice that
 # Explicit 1D heat equation
 using Checkpointing
 using Enzyme
-using Plots
+using Adapt
 
-mutable struct Heat
-    Tnext::Vector{Float64}
-    Tlast::Vector{Float64}
+mutable struct Heat{T}
+    Tnext::T
+    Tlast::T
     n::Int
     λ::Float64
     tsteps::Int
 end
 
+function Adapt.adapt_structure(to, heat::Heat)
+    Heat(adapt(to, heat.Tnext), adapt(to, heat.Tlast), heat.n, heat.λ, heat.tsteps)
+end
+
 function advance(heat::Heat)
-    next = heat.Tnext
-    last = heat.Tlast
-    λ = heat.λ
-    n = heat.n
-    for i = 2:(n-1)
-        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
-    end
+    heat.Tnext[2:end-1] .= heat.Tlast[2:end-1] .+ heat.λ .* (
+        heat.Tlast[1:end-2] .- 2 .* heat.Tlast[2:end-1] .+ heat.Tlast[3:end]
+    )
     return nothing
 end
 
-
 function sumheat(heat::Heat, scheme::Union{Revolve,Periodic}, tsteps::Int64)
-    # AD: Create shadow copy for derivatives
     @ad_checkpoint scheme for i = 1:tsteps
         heat.Tlast .= heat.Tnext
         advance(heat)
@@ -72,21 +70,14 @@ end
 
 function heat(scheme::Scheme, tsteps::Int)
     n = 100
-    Δx = 0.1
-    Δt = 0.001
-    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
     λ = 0.5
 
-    # Create object from struct. tsteps is not needed for a for-loop
     heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
-    # Shadow copy for Enzyme
     dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
 
-    # Boundary conditions
     heat.Tnext[1] = 20.0
     heat.Tnext[end] = 0
 
-    # Compute gradient
     autodiff(
         Enzyme.ReverseWithPrimal,
         sumheat,
@@ -99,17 +90,84 @@ function heat(scheme::Scheme, tsteps::Int)
 end
 tsteps = 500
 T, dT = heat(Revolve(4), tsteps)
-# Plot function values
-plot(T)
-# Plot gradient with respect of sum(T[end]) with respect to T[1].
-plot(dT)
 ```
 
-## Future
+## GPU Support
 
-The following features are planned for development:
+Checkpointing.jl supports GPU arrays from [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [oneAPI.jl](https://github.com/JuliaGPU/oneAPI.jl). GPU array detection is provided via [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl), and structs can be moved to the GPU using [Adapt.jl](https://github.com/JuliaGPU/Adapt.jl).
 
-* Support checkpoints on GPUs
+### How it works
+
+The checkpointing loop runs on the **CPU host** — it is not a GPU kernel. Each iteration may internally launch GPU kernels, but the checkpoint orchestration (store, restore, forward, uturn) is host-side logic. The core mechanism is `deepcopy` on closures containing GPU arrays, which dispatches to the GPU backend's copy implementation (e.g., `CUDA.jl` defines `Base.deepcopy_internal` for `CuArray`).
+
+### Making a struct GPU-compatible
+
+Parameterize the array type and define `Adapt.adapt_structure`:
+
+```julia
+using Adapt
+
+mutable struct MyModel{T}
+    state::T
+    n::Int
+end
+
+function Adapt.adapt_structure(to, m::MyModel)
+    MyModel(adapt(to, m.state), m.n)
+end
+```
+
+Then move to GPU with `adapt`:
+
+```julia
+using CUDA
+model_cpu = MyModel(zeros(100), 100)
+model_gpu = adapt(CuArray, model_cpu)  # state is now a CuVector on the GPU
+```
+
+### Writing GPU-compatible loop bodies
+
+Use broadcasting instead of scalar loops so the computation runs on the GPU:
+
+```julia
+# CPU-only: scalar loop
+for i = 2:(n-1)
+    next[i] = last[i] + λ * (last[i-1] - 2*last[i] + last[i+1])
+end
+
+# GPU-compatible: broadcasting
+next[2:end-1] .= last[2:end-1] .+ λ .* (
+    last[1:end-2] .- 2 .* last[2:end-1] .+ last[3:end]
+)
+```
+
+### Running on GPU
+
+```julia
+using CUDA
+using Adapt
+
+# Create on CPU, adapt to GPU
+heat_model = adapt(CuArray, Heat(zeros(n), zeros(n), n, λ, tsteps))
+dheat = adapt(CuArray, Heat(zeros(n), zeros(n), n, λ, tsteps))
+
+autodiff(
+    Enzyme.ReverseWithPrimal,
+    sumheat,
+    Duplicated(heat_model, dheat),
+    Const(scheme),
+    Const(tsteps),
+)
+```
+
+### Storage compatibility
+
+* **ArrayStorage** (default): Works with GPU arrays. Checkpoints stay on the device.
+* **HDF5Storage**: Does **not** support GPU arrays (serialization cannot handle device pointers). An `ArgumentError` is thrown if GPU arrays are detected.
+
+### GPU memory considerations
+
+Each checkpoint stores a `deepcopy` of the full closure including all GPU arrays. With `Revolve(c)` using `c` checkpoints, this means `c` copies of all GPU state reside on the device. For large models, monitor GPU memory usage accordingly.
 
 [1] Andreas Griewank and Andrea Walther, Algorithm 799: Revolve: An Implementation of Checkpointing for the Reverse or Adjoint Mode of Computational Differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI: [10.1145/347837.347846](https://doi.org/10.1145/347837.347846)
 
