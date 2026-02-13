@@ -55,8 +55,8 @@ allowscalar(true)
             steps = 500
             snaps = 100
             T, dT = heat_gpu(eval(scheme)(snaps); arraytype = CuArray)
-            @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
-            @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)
+            @test isapprox(norm(T), 66.21987468492061, atol = 1.0e-11)
+            @test isapprox(norm(dT), 6.970279349365908, atol = 1.0e-11)
         end
     end
 
@@ -72,7 +72,7 @@ allowscalar(true)
             bmodel = Model(CUDA.zeros(2), CUDA.zeros(2), 0.0, 0.0)
 
             function foo(model::Model)
-                @ad_checkpoint scheme for i = 1:steps
+                @ad_checkpoint scheme for i in 1:steps
                     model.F_H .= model.F
                     advance(model)
                     model.t += model.h
@@ -81,8 +81,8 @@ allowscalar(true)
             end
             autodiff(Enzyme.Reverse, Const(foo), Duplicated(model, bmodel))
 
-            F_opt = Array{Float64,1}(undef, 2)
-            L_opt = Array{Float64,1}(undef, 2)
+            F_opt = Array{Float64, 1}(undef, 2)
+            L_opt = Array{Float64, 1}(undef, 2)
             opt_sol(F_opt, 1.0)
             opt_lambda(L_opt, 0.0)
             return Array(model.F), Array(bmodel.F), F_opt, L_opt
@@ -92,8 +92,8 @@ allowscalar(true)
             steps = 100
             snaps = 4
             F, L, F_opt, L_opt = muoptcontrol_gpu(eval(scheme)(snaps), steps, snaps)
-            @test isapprox(F_opt, F, rtol = 1e-4)
-            @test isapprox(L_opt, L, rtol = 1e-4)
+            @test isapprox(F_opt, F, rtol = 1.0e-4)
+            @test isapprox(L_opt, L, rtol = 1.0e-4)
         end
     end
 

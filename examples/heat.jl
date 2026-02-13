@@ -12,12 +12,12 @@ mutable struct Heat{T}
 end
 
 function Adapt.adapt_structure(to, heat::Heat)
-    Heat(adapt(to, heat.Tnext), adapt(to, heat.Tlast), heat.n, heat.λ, heat.tsteps)
+    return Heat(adapt(to, heat.Tnext), adapt(to, heat.Tlast), heat.n, heat.λ, heat.tsteps)
 end
 
 function advance(heat::Heat)
-    heat.Tnext[2:end-1] .= heat.Tlast[2:end-1] .+ heat.λ .* (
-        heat.Tlast[1:end-2] .- 2 .* heat.Tlast[2:end-1] .+ heat.Tlast[3:end]
+    heat.Tnext[2:(end - 1)] .= heat.Tlast[2:(end - 1)] .+ heat.λ .* (
+        heat.Tlast[1:(end - 2)] .- 2 .* heat.Tlast[2:(end - 1)] .+ heat.Tlast[3:end]
     )
     return nothing
 end

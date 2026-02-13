@@ -94,11 +94,13 @@ Recursively check whether `x` or any of its fields contain GPU arrays.
 Throws an `ArgumentError` if a GPU array is found.
 """
 function _check_gpu_fields(x)
-    is_gpu_array(x) && throw(ArgumentError(
-        "GPU arrays are not supported with HDF5Storage or ChkpDump serialization. " *
-        "Use ArrayStorage instead."
-    ))
-    if ismutable(x) && !isa(x, AbstractArray)
+    is_gpu_array(x) && throw(
+        ArgumentError(
+            "GPU arrays are not supported with HDF5Storage or ChkpDump serialization. " *
+                "Use ArrayStorage instead."
+        )
+    )
+    return if ismutable(x) && !isa(x, AbstractArray)
         for name in fieldnames(typeof(x))
             _check_gpu_fields(getfield(x, name))
         end
@@ -115,6 +117,7 @@ function check_no_gpu_arrays(body::Function)
     for name in fieldnames(typeof(body))
         _check_gpu_fields(getfield(body, name))
     end
+    return
 end
 
 include("Storage/ArrayStorage.jl")

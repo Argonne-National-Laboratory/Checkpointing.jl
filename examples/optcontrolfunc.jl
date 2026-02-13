@@ -9,7 +9,7 @@ mutable struct Model{T}
 end
 
 function Adapt.adapt_structure(to, model::Model)
-    Model(adapt(to, model.F), adapt(to, model.F_H), model.t, model.h)
+    return Model(adapt(to, model.F), adapt(to, model.F_H), model.t, model.h)
 end
 
 function func_U(t)

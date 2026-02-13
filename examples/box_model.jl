@@ -117,8 +117,10 @@ mutable struct Box{T}
 end
 
 function Adapt.adapt_structure(to, box::Box)
-    Box(adapt(to, box.in_now), adapt(to, box.in_old),
-        adapt(to, box.out_now), adapt(to, box.out_old), box.i)
+    return Box(
+        adapt(to, box.in_now), adapt(to, box.in_old),
+        adapt(to, box.out_now), adapt(to, box.out_old), box.i
+    )
 end
 
 function forward_func_4_AD(in_now, in_old, out_old, out_now)

@@ -98,7 +98,7 @@ using Enzyme
                 @info "CUDA not functional, skipping GPU tests"
             end
         catch e
-            @info "CUDA.jl not available, skipping GPU tests" exception=e
+            @info "CUDA.jl not available, skipping GPU tests" exception = e
         end
     end
 end
