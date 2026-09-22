@@ -8,7 +8,15 @@
 #   https://github.com/devitocodes/pyrevolve/blob/master/src/revolve.cpp
 # TODO: Extend Online_r2 to Online_r3
 
-mutable struct Online_r2{FT} <: Scheme where {FT}
+"""
+    OnlineR2State
+
+The bookkeeping half of [`Online_r2`](@ref). Split out of the scheme for the
+same reason as [`RevolveState`](@ref): this 290-line state machine never touches
+the loop-body closure, so it should be compiled once rather than once per
+`@ad_checkpoint` site.
+"""
+mutable struct OnlineR2State
     check::Int
     capo::Int
     acp::Int
@@ -26,9 +34,28 @@ mutable struct Online_r2{FT} <: Scheme where {FT}
     ch::Vector{Int}
     ord_ch::Vector{Int}
     num_rep::Vector{Int}
+end
+
+mutable struct Online_r2{FT} <: Scheme
+    state::OnlineR2State
     revolve::Revolve{FT}
     storage::AbstractStorage
 end
+
+const _ONLINE_OWN_FIELDS = (:state, :revolve, :storage)
+
+@inline function Base.getproperty(online::Online_r2, name::Symbol)
+    name in _ONLINE_OWN_FIELDS && return getfield(online, name)
+    return getfield(getfield(online, :state), name)
+end
+
+@inline function Base.setproperty!(online::Online_r2, name::Symbol, v)
+    name in _ONLINE_OWN_FIELDS && return setfield!(online, name, v)
+    return setfield!(getfield(online, :state), name, v)
+end
+
+Base.propertynames(::Online_r2) =
+    (_ONLINE_OWN_FIELDS..., fieldnames(OnlineR2State)...)
 
 """
     Online_r2{FT}(
@@ -77,7 +104,7 @@ function Online_r2{FT}(
         num_rep[i] = -1
     end
     revolve = Revolve{FT}(typemax(Int64), acp; verbose = verbose)
-    online_r2 = Online_r2{FT}(
+    state = OnlineR2State(
         check,
         capo,
         acp,
@@ -95,9 +122,9 @@ function Online_r2{FT}(
         ch,
         ord_ch,
         num_rep,
-        revolve,
-        storage,
     )
+
+    online_r2 = Online_r2{FT}(state, revolve, storage)
     return online_r2
 end
 
@@ -152,7 +179,9 @@ function update_revolve(online::Online_r2{FT}, steps) where {FT}
     online.revolve.stepof[online.acp+1] = 0
 end
 
-function next_action!(online::Online_r2)::Action
+next_action!(online::Online_r2)::Action = next_action!(getfield(online, :state))
+
+function next_action!(online::OnlineR2State)::Action
     # Default values for next action
     actionflag = none
     if online.verbose > 0
