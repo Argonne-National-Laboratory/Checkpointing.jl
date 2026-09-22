@@ -2,6 +2,7 @@ using Test
 using Checkpointing
 using LinearAlgebra
 using Enzyme
+using HDF5
 
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin

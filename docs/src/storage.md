@@ -31,6 +31,18 @@ Checkpointing.load!(body::FT, storage::MyStorage{FT}, i::Integer) where {FT}
 `load!` restores checkpoint `i` **into** `body` and returns it, leaving the
 stored checkpoint intact -- Revolve restores the same slot more than once.
 
+## HDF5Storage
+
+`HDF5Storage` lives in a package extension, so HDF5 is not loaded -- and
+`libhdf5` is not even opened -- unless you ask for it:
+
+```julia
+using Checkpointing, HDF5
+scheme = Revolve(100; storage = HDF5Storage)
+```
+
+Without `using HDF5`, constructing an `HDF5Storage` raises an error saying so.
+
 ## Allocation and the copy interface
 
 `save!` and `load!` run once per store and restore action, so a backend that

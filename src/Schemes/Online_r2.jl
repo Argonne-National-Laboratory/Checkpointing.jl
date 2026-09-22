@@ -477,8 +477,7 @@ function rev_checkpoint_while(
 ) where {FT}
     body = checkpoint_alloc(body_input)
     model_check = alg.storage
-    # model_final = []
-    freeindices = Stack{Int64}()
+    freeindices = Int[]
     storemapinv = Dict{Int64,Int64}()
     storemap = Dict{Int64,Int64}()
     check = 0
