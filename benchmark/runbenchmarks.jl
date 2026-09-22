@@ -5,9 +5,9 @@
 #
 #   julia --project=benchmark benchmark/runbenchmarks.jl
 #
-# The allocation column is the number that PR 1 (the storage copy interface)
-# is meant to move: with preallocated checkpoint slots the reverse sweep
-# should allocate O(acp) rather than O(numfwd) copies of the state.
+# With preallocated checkpoint slots the reverse sweep allocates O(acp) rather
+# than O(numfwd) copies of the state, so the allocation column should stay flat
+# as the number of steps grows.
 
 using Checkpointing
 using Enzyme
@@ -77,24 +77,20 @@ function main()
     end
     report("box_model: 10000 steps, 500 snapshots", box_rows)
 
-    # Checkpoint-count sensitivity: how much forward work does the scheme
-    # actually do? `numfwd` is the recompute overhead Revolve is trading for
-    # memory, and the primal sweep in `augmented_primal` is charged on top.
+    # Checkpoint-count sensitivity: how much forward work does the scheme do?
+    # The primal drives the schedule up to the first u-turn, so the forward
+    # sweep is not repeated: forward evaluations are `forwardcount + 1` (the
+    # extra one finishes the primal past the snapshot taken for the first
+    # u-turn), plus one evaluation inside each step's adjoint.
     println()
-    println("Revolve forward-step accounting (heat, 500 steps)")
+    println("Revolve forward evaluations (heat, 500 steps)")
     println("-"^72)
-    @printf("%8s %12s %12s %12s\n", "snaps", "numfwd", "+primal", "overhead")
+    @printf("%8s %14s %12s\n", "snaps", "forward evals", "overhead")
     println("-"^72)
     for snaps in (4, 10, 25, 50, 100)
         r = Checkpointing.Revolve{Nothing}(500, snaps)
-        fwd = Checkpointing.forwardcount(r)
-        @printf(
-            "%8d %12d %12d %11.2fx\n",
-            snaps,
-            round(Int, fwd),
-            round(Int, fwd) + 500,
-            (round(Int, fwd) + 500) / 500
-        )
+        fwd = round(Int, Checkpointing.forwardcount(r)) + 1
+        @printf("%8d %14d %11.2fx\n", snaps, fwd, fwd / 500)
     end
     return nothing
 end
