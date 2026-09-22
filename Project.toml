@@ -4,18 +4,19 @@ authors = ["Michel Schanen <mschanen@anl.gov>", "Sri Hari Krishna Narayanan <sna
 version = "0.12.0"
 
 [deps]
-DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
 EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
-HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
-HDF5_jll = "0234f1f7-429e-5d53-9886-15a909be8d59"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
+[weakdeps]
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+
+[extensions]
+CheckpointingHDF5Ext = "HDF5"
+
 [compat]
-DataStructures = "0.18, 0.19"
 Enzyme = "0.11, 0.12, 0.13"
 EnzymeCore = "0.8"
 HDF5 = "0.16, 0.17"
-HDF5_jll = "1.14"
 Serialization = "1.10"
 julia = "1.10"

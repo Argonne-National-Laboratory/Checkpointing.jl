@@ -19,7 +19,7 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 
 ## Storage
 * ArrayStorage: Stores all checkpoints values in an array of type `Array`
-* HDF5Storage: Stores all checkpoints values in an HDF5 file
+* HDF5Storage: Stores all checkpoints values in an HDF5 file (requires `using HDF5`; provided by a package extension)
 
 ## Installation
 

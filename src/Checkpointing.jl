@@ -1,8 +1,6 @@
 module Checkpointing
 
-using DataStructures
 using Serialization
-using HDF5
 
 """
     Scheme
