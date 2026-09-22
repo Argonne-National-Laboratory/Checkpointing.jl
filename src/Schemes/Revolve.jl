@@ -155,9 +155,9 @@ function next_action!(revolve::Revolve)::Action
     cpnum = 0
     if revolve.numinv == 0
         # first invocation
-        for v in revolve.stepof
-            v = 0
-        end
+        # `stepof` is allocated with `undef`, so it has to be zeroed here --
+        # `for v in stepof; v = 0; end` only rebound the loop variable.
+        fill!(revolve.stepof, 0)
         revolve.stepof[1] = revolve.cstart - 1
     end
     prevcstart = revolve.cstart
@@ -213,7 +213,9 @@ function next_action!(revolve::Revolve)::Action
             error("Revolve: insufficient allowed checkpoints")
         else
             reps = 0
-            range = 1
+            # These are all binomial ratios and go through `/`, so keeping them
+            # `Float64` from the start avoids `Union{Int64,Float64}` locals.
+            range = 1.0
             while range < (revolve.cend - revolve.cstart)
                 reps = reps + 1
                 range = range * (reps + availcp) / reps
@@ -222,22 +224,22 @@ function next_action!(revolve::Revolve)::Action
             if availcp > 1
                 bino2 = bino1 * availcp / (availcp + reps - 1)
             else
-                bino2 = 1
+                bino2 = 1.0
             end
             if availcp == 1
-                bino3 = 0
+                bino3 = 0.0
             elseif availcp > 2
                 bino3 = bino2 * (availcp - 1) / (availcp + reps - 2)
             else
-                bino3 = 1
+                bino3 = 1.0
             end
             bino4 = bino2 * (reps - 1) / availcp
             if availcp < 3
-                bino5 = 0
+                bino5 = 0.0
             elseif availcp > 3
                 bino5 = bino3 * (availcp - 1) / reps
             else
-                bino5 = 1
+                bino5 = 1.0
             end
             if (revolve.cend - revolve.cstart) <= (bino1 + bino3)
                 revolve.cstart = trunc(Int, revolve.cstart + bino4)
@@ -371,12 +373,12 @@ function forwardcount(revolve::Revolve)
     else
         s = steps
         if s == 1
-            ret = 0
+            ret = 0.0
         elseif checkpoints == 0
             error("Revolve forarwdCount: error: given inputs require checkpoints > 0")
         else
             reps = 0
-            range = 1
+            range = 1.0
             while range < s
                 reps = reps + 1
                 range = range * (reps + checkpoints) / reps
