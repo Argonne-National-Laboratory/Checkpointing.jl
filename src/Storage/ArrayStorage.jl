@@ -47,7 +47,9 @@ than once -- which Revolve relies on.
 function load!(body::FT, storage::ArrayStorage{FT}, i::Integer) where {FT}
     checkbounds(storage._fstorage, i)
     isassigned(storage._fstorage, i) || throw(
-        ArgumentError("[Checkpointing.jl]: checkpoint $i was restored before it was stored."),
+        ArgumentError(
+            "[Checkpointing.jl]: checkpoint $i was restored before it was stored.",
+        ),
     )
     return @inbounds checkpoint_copy!(body, storage._fstorage[i])
 end
