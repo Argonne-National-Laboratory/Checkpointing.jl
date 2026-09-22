@@ -47,8 +47,7 @@ end
     return setfield!(getfield(revolve, :state), name, v)
 end
 
-Base.propertynames(::Revolve) =
-    (_REVOLVE_OWN_FIELDS..., fieldnames(RevolveState)...)
+Base.propertynames(::Revolve) = (_REVOLVE_OWN_FIELDS..., fieldnames(RevolveState)...)
 
 """
     Revolve{MT}(

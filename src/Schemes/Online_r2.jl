@@ -54,8 +54,7 @@ end
     return setfield!(getfield(online, :state), name, v)
 end
 
-Base.propertynames(::Online_r2) =
-    (_ONLINE_OWN_FIELDS..., fieldnames(OnlineR2State)...)
+Base.propertynames(::Online_r2) = (_ONLINE_OWN_FIELDS..., fieldnames(OnlineR2State)...)
 
 """
     Online_r2{FT}(
