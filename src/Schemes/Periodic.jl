@@ -3,7 +3,7 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-mutable struct Periodic{FT} <: Scheme where {FT}
+mutable struct Periodic{FT} <: Scheme
     steps::Int
     acp::Int
     period::Int

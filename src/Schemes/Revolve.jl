@@ -1,4 +1,17 @@
-mutable struct Revolve{FT} <: Scheme where {FT}
+"""
+    RevolveState
+
+The bookkeeping half of [`Revolve`](@ref): the Alg. 799 state machine and
+nothing else.
+
+This is deliberately *not* parameterized on the loop-body closure type. A scheme
+is parameterized by the closure so that its storage can be, which means a
+program with several `@ad_checkpoint` sites has several `Revolve` types -- and
+Julia would recompile `next_action!` and the whole binomial schedule for each
+one, even though none of that code ever touches the closure. Keeping the state
+in its own concrete type compiles the state machine exactly once.
+"""
+mutable struct RevolveState
     steps::Int
     tail::Int
     acp::Int
@@ -12,9 +25,29 @@ mutable struct Revolve{FT} <: Scheme where {FT}
     firstuturned::Bool
     stepof::Vector{Int}
     verbose::Int
+end
+
+mutable struct Revolve{FT} <: Scheme
+    state::RevolveState
     storage::AbstractStorage
     chkp_dump::Union{Nothing,ChkpDump}
 end
+
+# The state fields stay reachable as `revolve.numfwd` and friends; both are
+# constant-folded when the field name is a literal, which it always is.
+const _REVOLVE_OWN_FIELDS = (:state, :storage, :chkp_dump)
+
+@inline function Base.getproperty(revolve::Revolve, name::Symbol)
+    name in _REVOLVE_OWN_FIELDS && return getfield(revolve, name)
+    return getfield(getfield(revolve, :state), name)
+end
+
+@inline function Base.setproperty!(revolve::Revolve, name::Symbol, v)
+    name in _REVOLVE_OWN_FIELDS && return setfield!(revolve, name, v)
+    return setfield!(getfield(revolve, :state), name, v)
+end
+
+Base.propertynames(::Revolve) = (_REVOLVE_OWN_FIELDS..., fieldnames(RevolveState)...)
 
 """
     Revolve{MT}(
@@ -70,7 +103,7 @@ function Revolve{FT}(
     firstuturned = false
     stepof = Vector{Int}(undef, acp + 1)
 
-    revolve = Revolve{FT}(
+    state = RevolveState(
         steps,
         tail,
         acp,
@@ -84,6 +117,10 @@ function Revolve{FT}(
         firstuturned,
         stepof,
         verbose,
+    )
+
+    revolve = Revolve{FT}(
+        state,
         storage,
         ChkpDump(
             steps,
@@ -141,7 +178,9 @@ function instantiate(::Type{FT}, revolve::Revolve{Nothing}, steps::Int) where {F
     )
 end
 
-function next_action!(revolve::Revolve)::Action
+next_action!(revolve::Revolve)::Action = next_action!(getfield(revolve, :state))
+
+function next_action!(revolve::RevolveState)::Action
     # Default values for next action
     actionflag = none
     iteration = 0
@@ -283,7 +322,7 @@ function next_action!(revolve::Revolve)::Action
 
 end
 
-function guess(revolve::Revolve)::Int
+function guess(revolve::RevolveState)::Int
     bSteps = revolve.steps
     if revolve.steps < 1
         error("Revolve: error: steps < 1")
@@ -324,7 +363,7 @@ function guess(revolve::Revolve)::Int
     return guess
 end
 
-function factor(revolve::Revolve, steps, checkpoints)
+function factor(revolve::RevolveState, steps, checkpoints)
     f = forwardcount(revolve)
     if f == -1
         error("Revolve: error returned by forwardcount")
@@ -334,7 +373,7 @@ function factor(revolve::Revolve, steps, checkpoints)
     return factor
 end
 
-function chkrange(::Revolve, ss, tt)
+function chkrange(::RevolveState, ss, tt)
     ret = Int(0)
     res = 1.0
     if tt < 0 || ss < 0
@@ -357,7 +396,7 @@ function chkrange(::Revolve, ss, tt)
     return ret
 end
 
-function forwardcount(revolve::Revolve)
+function forwardcount(revolve::RevolveState)
     checkpoints = revolve.acp
     steps = revolve.steps
     if checkpoints < 0
@@ -383,7 +422,7 @@ function forwardcount(revolve::Revolve)
     return ret
 end
 
-function reset!(revolve::Revolve)
+function reset!(revolve::RevolveState)
     revolve.cstart = 0
     revolve.tail = 1
     revolve.numfwd = 0
@@ -394,6 +433,13 @@ function reset!(revolve::Revolve)
     revolve.firstuturned = false
     return nothing
 end
+
+guess(revolve::Revolve)::Int = guess(getfield(revolve, :state))
+chkrange(revolve::Revolve, ss, tt) = chkrange(getfield(revolve, :state), ss, tt)
+forwardcount(revolve::Revolve) = forwardcount(getfield(revolve, :state))
+factor(revolve::Revolve, steps, checkpoints) =
+    factor(getfield(revolve, :state), steps, checkpoints)
+reset!(revolve::Revolve) = reset!(getfield(revolve, :state))
 
 function rev_checkpoint_for(
     config,
