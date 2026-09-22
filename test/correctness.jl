@@ -66,14 +66,28 @@ end
         # really leaves the state where a plain loop would.
         @test final == want_final
     end
-    # Online_r2 only works in a certain regime: the offline phase assumes the
-    # online phase filled every checkpoint, so very short loops are out of
-    # scope. These lengths are inside it for c = 3.
-    @testset "Online_r2(3) over $n iterations" for n in (8, 10, 30)
+    # Short loops can end before the online phase fills every checkpoint slot;
+    # c = 2 exercises the branch that used to store into a slot past the end.
+    # For c >= 4 the schedule has a finite range, so test up to its last length.
+    @testset "Online_r2($c) over $n iterations" for c = 1:5,
+        n in
+        filter(<=(Checkpointing.online_r2_limit(c)), [1, 2, 3, 4, 5, 8, 10, 14, 20, 30])
+
         want_primal, want_grad, want_final = gradient(plain_while_steps, Const(n))
-        primal, grad, final = gradient(checkpointed_while, Const(Online_r2(3)), Const(n))
+        primal, grad, final = gradient(checkpointed_while, Const(Online_r2(c)), Const(n))
         @test primal ≈ want_primal
         @test grad ≈ want_grad
         @test final == want_final
+    end
+    @testset "Online_r2($c) past its range raises a clear error" for c in (4, 5)
+        n = Checkpointing.online_r2_limit(c) + 1
+        err = try
+            gradient(checkpointed_while, Const(Online_r2(c)), Const(n))
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("supports loops of at most $(n - 1) iterations", err.msg)
     end
 end

@@ -68,6 +68,12 @@ This implements the online checkpointing scheme for `r=2` as described in the pa
 
 The key advantage is that the number of iterations does not have to be known a priori.
 
+With fewer than 4 checkpoints the schedule extends to loops of any length. With
+`c ≥ 4` checkpoints it covers at most `(c + 2)(c + 1)/2 - 1` iterations (14 for
+`c = 4`, 20 for `c = 5`); a longer loop raises an error rather than silently
+differentiating only part of it. Extending that range needs an `Online_r3`
+scheme, which is not implemented.
+
 Creates a new `Online_r2` object for checkpointing.
 - `checkpoints`: is the number of checkpoints used for storage.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
@@ -127,6 +133,14 @@ function Online_r2{FT}(
     return online_r2
 end
 
+"""
+    online_r2_limit(checkpoints)
+
+The longest loop Online_r2 can checkpoint with `checkpoints` checkpoints, or
+`typemax(Int)` where the schedule has no limit.
+"""
+online_r2_limit(c::Integer) = c < 4 ? typemax(Int) : (c + 2) * (c + 1) ÷ 2 - 1
+
 function Online_r2(checkpoints::Integer; storage = ArrayStorage, kwargs...)
     return Online_r2{Nothing}(
         checkpoints;
@@ -143,39 +157,38 @@ function instantiate(::Type{FT}, online::Online_r2{Nothing}) where {FT}
     )
 end
 
+"""
+    update_revolve(online, steps)
+
+Hand over from the online phase to an offline Revolve over `steps` steps,
+seeded with the checkpoints the online phase actually holds.
+
+A short loop can end before the online phase has filled every slot; the unfilled
+ones still hold the `-1` placeholder in `ch`. Only the filled slots are handed to
+Revolve as taken checkpoints -- the rest are free for it to store into, see
+[`rev_checkpoint_while`](@ref).
+"""
 function update_revolve(online::Online_r2{FT}, steps) where {FT}
+    # Positions of the checkpoints held, in increasing order.
+    held = sort!([online.ch[j] for j = 1:online.acp if online.ch[j] >= 0])
     online.revolve = Revolve{FT}(steps, online.acp)
-    online.revolve.rwcp = online.revolve.acp - 1
+    online.revolve.rwcp = length(held) - 1
     online.revolve.steps = steps
     online.revolve.acp = online.acp
     online.revolve.cstart = steps - 1
     online.revolve.cend = steps
     online.revolve.numfwd = steps - 1
-    online.revolve.numinv = online.revolve.numfwd - 1
-    online.revolve.numstore = online.acp
+    # `numinv == 0` means "first invocation" to Revolve, which then resets
+    # `stepof` -- wiping the checkpoints seeded below. A one-step loop has
+    # `steps - 2 == 0`, so keep it positive.
+    online.revolve.numinv = max(online.revolve.numfwd - 1, 1)
+    online.revolve.numstore = length(held)
     online.revolve.prevcend = steps
     online.revolve.firstuturned = false
     online.revolve.verbose = 0
-    num_ch = Vector{Int}(undef, online.acp)
-    for i = 1:online.acp
-        num_ch[i] = 1
-        for j = 1:online.acp
-            if (online.ch[j] < online.ch[i])
-                num_ch[i] = num_ch[i] + 1
-            end
-        end
-    end
-    for i = 1:online.acp
-        for j = 1:online.acp
-            if (num_ch[j] == i)
-                online.ord_ch[i] = j
-            end
-        end
-    end
-    for j = 1:online.acp
-        online.revolve.stepof[j] = online.ch[online.ord_ch[j]]
-    end
-    online.revolve.stepof[online.acp+1] = 0
+    fill!(online.revolve.stepof, 0)
+    online.revolve.stepof[1:length(held)] .= held
+    return online.revolve
 end
 
 next_action!(online::Online_r2)::Action = next_action!(getfield(online, :state))
@@ -316,7 +329,10 @@ function next_action!(online::OnlineR2State)::Action
                 online.incr += 1
                 # Increase the number of takeshots and the corresponding checkpoint
                 online.numstore += 1
-                return Action(store, online.capo - 1, -1, 1 + 1)
+                # `cpnum` is 0-based -- callers store into slot `cpnum + 1` -- so
+                # this is checkpoint 1, the second slot. `1 + 1` here sent every
+                # store after the first two into a third slot that does not exist.
+                return Action(store, online.capo - 1, -1, 1)
             elseif (online.acp == 3)
                 online.ch[online.ind+1] = online.capo
                 online.check = online.ind
@@ -507,9 +523,10 @@ function fwd_checkpoint_while(body::Function, alg::Online_r2)
             # loop. With the primal driven from here, stopping would truncate
             # the primal too, so fail loudly instead.
             error(
-                "[Checkpointing.jl]: Online_r2 returned `$(next_action.actionflag)` after " *
-                "$onlinesteps iterations; the loop is beyond what Online_r2 can " *
-                "checkpoint with $(alg.acp) checkpoints. Use more checkpoints.",
+                "[Checkpointing.jl]: Online_r2 with $(alg.acp) checkpoints supports loops " *
+                "of at most $(online_r2_limit(alg.acp)) iterations, and this loop is " *
+                "longer (the schedule gave up after $onlinesteps). Use more checkpoints, " *
+                "or Revolve if the number of iterations is known in advance.",
             )
         end
     end
@@ -526,7 +543,9 @@ primal counted, and runs it from the checkpoints the online phase stored.
 function rev_checkpoint_while(config, tape, dbody::Function, alg::Online_r2)
     body, storemapinv, onlinesteps = tape
     model_check = alg.storage
-    freeindices = Int[]
+    # Slots the online phase never stored into are free for the offline phase;
+    # the rest become free as their checkpoints are consumed below.
+    freeindices = [slot for slot = 1:alg.acp if !haskey(storemapinv, slot)]
     storemap = Dict{Int64,Int64}()
     for (key, value) in storemapinv
         storemap[value] = key
