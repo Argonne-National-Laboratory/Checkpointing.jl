@@ -101,10 +101,13 @@ function augmented_primal(
     range,
 )
     check_closure_captures(body)
-    tape_body = deepcopy(body.val)
-    # make_zero!(body.dval)
-    func.val(body.val, alg.val, range.val)
-    return AugmentedReturn(nothing, nothing, (tape_body,))
+    # Drive the scheme's schedule in the primal instead of a plain loop. The
+    # schedule up to the first u-turn *is* a forward sweep, with stores in it;
+    # running a plain loop here and replaying that sweep from the initial state
+    # in `reverse` did the whole forward pass twice.
+    scheme = instantiate(typeof(body.val), alg.val, length(range.val))
+    fwd_tape = Checkpointing.fwd_checkpoint_for(body.val, scheme, range.val)
+    return AugmentedReturn(nothing, nothing, (scheme, fwd_tape))
 end
 
 function reverse(
@@ -116,11 +119,10 @@ function reverse(
     alg,
     range,
 )
-    (body_input,) = tape
-    scheme = instantiate(typeof(body_input), alg.val, length(range.val))
+    scheme, fwd_tape = tape
     dbody = shadow(body)
 
-    Checkpointing.rev_checkpoint_for(config, body_input, dbody, scheme, range.val)
+    Checkpointing.rev_checkpoint_for(config, fwd_tape, dbody, scheme, range.val)
     return (nothing, nothing, nothing)
 end
 
@@ -132,10 +134,9 @@ function augmented_primal(
     alg,
 )
     check_closure_captures(body)
-    tape_body = deepcopy(body.val)
-    # make_zero!(body.dval)
-    func.val(body.val, alg.val)
-    return AugmentedReturn(nothing, nothing, (tape_body,))
+    scheme = instantiate(typeof(body.val), alg.val)
+    fwd_tape = Checkpointing.fwd_checkpoint_while(body.val, scheme)
+    return AugmentedReturn(nothing, nothing, (scheme, fwd_tape))
 end
 
 function reverse(
@@ -146,10 +147,9 @@ function reverse(
     body::Union{Const,Duplicated,MixedDuplicated},
     alg,
 )
-    (body_input,) = tape
-    scheme = instantiate(typeof(body_input), alg.val)
+    scheme, fwd_tape = tape
     dbody = shadow(body)
 
-    Checkpointing.rev_checkpoint_while(config, body_input, dbody, scheme)
+    Checkpointing.rev_checkpoint_while(config, fwd_tape, dbody, scheme)
     return (nothing, nothing)
 end

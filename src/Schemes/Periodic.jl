@@ -28,7 +28,10 @@ and then restore it when needed.
 - `verbose::Int`: Verbosity level for logging and diagnostics.
 - `write_checkpoints::Bool`: Whether to enable writing checkpoints (default is `false`).
 
-The period will be `div(steps, checkpoints)`.
+The loop is split into `checkpoints` segments of `div(steps, checkpoints)` or
+`cld(steps, checkpoints)` steps each, so every step is covered even when
+`checkpoints` does not divide `steps`. `period` is the length of the longest
+segment.
 
 """
 function Periodic{FT}(
@@ -41,7 +44,9 @@ function Periodic{FT}(
     write_checkpoints_filename::String = "chkp",
 ) where {FT}
     acp = checkpoints
-    period = div(steps, checkpoints)
+    # `div` here used to drop the last `steps % checkpoints` steps from the
+    # reverse sweep entirely. Segments now tile the loop (see `_segment`).
+    period = checkpoints == 0 ? 0 : cld(steps, checkpoints)
     if verbose > 0
         @info "[Checkpointing] Periodic checkpointing with $acp checkpoints and period $period"
     end
@@ -106,37 +111,60 @@ function forwardcount(periodic::Periodic)
     end
 end
 
+# Segment `k` of `acp` covers these positions in the loop. Segment lengths differ
+# by at most one, and together the segments tile `1:steps` exactly.
+_segment(alg::Periodic, k) = (div((k-1)*alg.steps, alg.acp)+1):div(k*alg.steps, alg.acp)
+
+"""
+    fwd_checkpoint_for(body, alg::Periodic, range) -> tape
+
+The primal half of periodic checkpointing: runs the loop on `body` itself,
+storing the state at the start of every segment. This is the sweep the reverse
+pass used to redo from the initial state.
+"""
+function fwd_checkpoint_for(body::Function, alg::Periodic, range)
+    @assert alg.steps == length(range)
+    alg.acp == 0 && return nothing
+    for k = 1:alg.acp
+        save!(alg.storage, body, k)
+        for j in _segment(alg, k)
+            body(range[j])
+        end
+    end
+    # A working copy for the reverse sweep, which restores into it before use.
+    return (checkpoint_alloc(body),)
+end
+
 function rev_checkpoint_for(
     config,
-    body_input::Function,
+    tape,
     dbody::Function,
     alg::Periodic{FT},
     range,
 ) where {FT}
-    body = checkpoint_alloc(body_input)
+    tape === nothing && return nothing
+    (body,) = tape
     model_check_outer = alg.storage
     model_check_inner = ArrayStorage{FT}(alg.period)
-    for i = 1:alg.acp
-        save!(model_check_outer, body, i)
-        for j = ((i-1)*alg.period):((i)*alg.period-1)
-            body(j)
+    for k = alg.acp:-1:1
+        load!(body, model_check_outer, k)
+        seg = _segment(alg, k)
+        for n in eachindex(seg)
+            save!(model_check_inner, body, n)
+            # The last step of the segment is adjoined straight from its
+            # checkpoint below, so running it forward here would be wasted.
+            n < length(seg) && body(range[seg[n]])
         end
-    end
-
-    for i = alg.acp:-1:1
-        load!(body, model_check_outer, i)
-        for j = 1:alg.period
-            save!(model_check_inner, body, j)
-            body(j)
-        end
-        for j = alg.period:-1:1
+        # `reverse` alone is EnzymeRules.reverse inside this module.
+        for n in Base.reverse(eachindex(seg))
+            j = seg[n]
+            load!(body, model_check_inner, n)
             dump_prim(alg.chkp_dump, j, body)
-            load!(body, model_check_inner, j)
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
-                Const(j),
+                Const(range[j]),
             )
             dump_adj(alg.chkp_dump, j, dbody)
         end

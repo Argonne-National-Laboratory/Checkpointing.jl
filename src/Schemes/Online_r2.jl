@@ -469,17 +469,18 @@ function next_action!(online::OnlineR2State)::Action
     return Action(err, online.capo, online.oldcapo, -1)
 end
 
-function rev_checkpoint_while(
-    config,
-    body_input::Function,
-    dbody::Function,
-    alg::Online_r2{FT},
-) where {FT}
-    body = checkpoint_alloc(body_input)
+"""
+    fwd_checkpoint_while(body, alg::Online_r2) -> tape
+
+The primal half of online checkpointing: runs the loop on `body` itself -- so
+`body` ends in the loop's final state -- while the online schedule decides where
+to store checkpoints. The number of iterations is only known once the loop
+condition fails, so this whole phase has to happen in the primal before the
+offline Revolve phase can be planned.
+"""
+function fwd_checkpoint_while(body::Function, alg::Online_r2)
     model_check = alg.storage
-    freeindices = Int[]
     storemapinv = Dict{Int64,Int64}()
-    storemap = Dict{Int64,Int64}()
     check = 0
     oldcapo = 0
     onlinesteps = 0
@@ -500,10 +501,33 @@ function rev_checkpoint_while(
             end
             oldcapo = next_action.iteration
         else
-            @error("Unexpected action in online phase: ", next_action.actionflag)
-            go = false
+            # This used to log and stop the *reverse* sweep's replay early,
+            # while a separate plain loop computed the primal -- so the primal
+            # was right and the gradient silently covered only part of the
+            # loop. With the primal driven from here, stopping would truncate
+            # the primal too, so fail loudly instead.
+            error(
+                "[Checkpointing.jl]: Online_r2 returned `$(next_action.actionflag)` after " *
+                "$onlinesteps iterations; the loop is beyond what Online_r2 can " *
+                "checkpoint with $(alg.acp) checkpoints. Use more checkpoints.",
+            )
         end
     end
+    # A working copy for the reverse sweep, which restores into it before use.
+    return (checkpoint_alloc(body), storemapinv, onlinesteps)
+end
+
+"""
+    rev_checkpoint_while(config, tape, dbody, alg::Online_r2)
+
+The reverse half: plans an offline Revolve schedule over the iterations the
+primal counted, and runs it from the checkpoints the online phase stored.
+"""
+function rev_checkpoint_while(config, tape, dbody::Function, alg::Online_r2)
+    body, storemapinv, onlinesteps = tape
+    model_check = alg.storage
+    freeindices = Int[]
+    storemap = Dict{Int64,Int64}()
     for (key, value) in storemapinv
         storemap[value] = key
     end

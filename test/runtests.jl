@@ -84,6 +84,7 @@ using HDF5
     @testset "Multilevel" begin
         include("multilevel.jl")
     end
+    include("correctness.jl")
     @testset "Test writing checkpoints out" begin
         include("output_chkp.jl")
         @testset "$scheme" for scheme in [:Revolve, :Periodic]

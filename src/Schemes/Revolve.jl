@@ -441,21 +441,74 @@ factor(revolve::Revolve, steps, checkpoints) =
     factor(getfield(revolve, :state), steps, checkpoints)
 reset!(revolve::Revolve) = reset!(getfield(revolve, :state))
 
-function rev_checkpoint_for(
-    config,
-    body_input::Function,
-    dbody::Function,
-    alg::Revolve{FT},
-    range,
-) where {FT}
-    body = checkpoint_alloc(body_input)
-    if alg.verbose > 0
-        @info "[Checkpointing] Size per checkpoint: $(Base.format_bytes(Base.summarysize(dbody)))"
-    end
+"""
+    fwd_checkpoint_for(body, alg::Revolve, range) -> tape
+
+The primal half of the Revolve schedule. Runs the loop on `body` itself -- so
+`body` ends in the loop's final state, as the primal requires -- and stores
+checkpoints wherever the schedule asks, up to the first u-turn.
+
+The schedule up to the first u-turn is exactly a forward sweep with stores in
+it, so running it here instead of a plain loop means the reverse sweep no
+longer has to redo it from the initial state. The first u-turn adjoins the last
+step, so the state from just before that step is snapshotted into the tape.
+"""
+function fwd_checkpoint_for(body::Function, alg::Revolve, range)
+    @assert alg.steps == length(range)
     storemap = Dict{Int64,Int64}()
     check = 0
+    while true
+        next_action = next_action!(alg)
+        if next_action.actionflag == Checkpointing.store
+            check = check + 1
+            storemap[next_action.iteration-1] = check
+            save!(alg.storage, body, check)
+        elseif next_action.actionflag == Checkpointing.forward
+            # The schedule counts steps from 0; the loop body sees `range`.
+            for j = next_action.startiteration:(next_action.iteration-1)
+                body(range[j+1])
+            end
+        elseif next_action.actionflag == Checkpointing.firstuturn
+            last = checkpoint_alloc(body)
+            body(range[end])
+            return (last, storemap, check)
+        elseif next_action.actionflag == Checkpointing.done
+            # Empty range: nothing to run and nothing to adjoin.
+            return nothing
+        else
+            error(
+                "Revolve: unexpected action $(next_action.actionflag) before the first u-turn",
+            )
+        end
+    end
+end
+
+"""
+    rev_checkpoint_for(config, tape, dbody, alg::Revolve, range)
+
+The reverse half of the Revolve schedule, resuming at the first u-turn from the
+tape [`fwd_checkpoint_for`](@ref) left behind.
+"""
+function rev_checkpoint_for(config, tape, dbody::Function, alg::Revolve, range)
+    tape === nothing && return nothing
+    body, storemap, check = tape
+    if alg.verbose > 0
+        @info "[Checkpointing] Size per checkpoint: $(Base.format_bytes(Base.summarysize(dbody)))"
+        @info "[Checkpointing] First uturn"
+        @info "[Checkpointing] Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
+    end
     model_check = alg.storage
     step = alg.steps
+    # The first u-turn: `body` holds the state from just before the last step.
+    dump_prim(alg.chkp_dump, step, body)
+    Enzyme.autodiff(
+        EnzymeCore.set_runtime_activity(Reverse, config),
+        Duplicated(body, dbody),
+        Const,
+        Const(range[step]),
+    )
+    dump_adj(alg.chkp_dump, step, dbody)
+    step -= 1
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
@@ -464,30 +517,15 @@ function rev_checkpoint_for(
             save!(model_check, body, check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
-                body(j)
+                body(range[j+1])
             end
-        elseif (next_action.actionflag == Checkpointing.firstuturn)
-            # body()
-            dump_prim(alg.chkp_dump, step, body)
-            if alg.verbose > 0
-                @info "[Checkpointing] First uturn"
-                @info "[Checkpointing] Size of total storage: $(Base.format_bytes(Base.summarysize(alg.storage)))"
-            end
-            Enzyme.autodiff(
-                EnzymeCore.set_runtime_activity(Reverse, config),
-                Duplicated(body, dbody),
-                Const,
-                Const(step),
-            )
-            dump_adj(alg.chkp_dump, step, dbody)
-            step -= 1
         elseif (next_action.actionflag == Checkpointing.uturn)
             dump_prim(alg.chkp_dump, step, body)
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
-                Const(step),
+                Const(range[step]),
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
@@ -503,6 +541,10 @@ function rev_checkpoint_for(
                 check = check - 1
             end
             break
+        else
+            error(
+                "Revolve: unexpected action $(next_action.actionflag) after the first u-turn",
+            )
         end
     end
     return nothing
