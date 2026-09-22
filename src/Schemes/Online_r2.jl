@@ -221,7 +221,7 @@ function next_action!(online::Online_r2)::Action
                 @info("Online_r2-condition for advance for r=2 online.acp=", online.acp)
             end
             if (online.acp == 1)
-                online.capo = BigInt(typemax(Int64))
+                online.capo = typemax(Int64)
                 online.numfwd += 1
                 return Action(forward, online.capo, online.oldcapo, -1)
             elseif (online.acp == 2)
@@ -232,7 +232,7 @@ function next_action!(online::Online_r2)::Action
                 online.numfwd += online.incr
                 if (online.iter == 0)
                     online.capo = online.ch[online.oldind+1]
-                    for i = 0:((online.t+1)/2)
+                    for i = 0:((online.t+1)÷2)
                         online.capo += online.incr
                         online.incr = online.incr + 1
                         online.iter = online.iter + 1
@@ -273,7 +273,7 @@ function next_action!(online::Online_r2)::Action
                     return Action(forward, online.capo, online.oldcapo, -1)
                 end
                 if online.verbose > 0
-                    @info(" iter ", iter, "incr ", incr)
+                    @info(" iter ", online.iter, " incr ", online.incr)
                 end
                 error(" not implemented yet")
                 return Action(done, online.capo, online.oldcapo, -1)
@@ -496,10 +496,9 @@ function rev_checkpoint_while(
                 body()
             end
         elseif (next_action.actionflag == Checkpointing.firstuturn)
-            # Commented out lines are weird
-            # body(model)
-            model_final = deepcopy(body)
-            # Enzyme.autodiff(body, Duplicated(model,shadowmodel))
+            # The online phase runs one iteration past the end of the loop,
+            # so the first uturn has no adjoint to take -- it only consumes
+            # that extra iteration.
         elseif (next_action.actionflag == Checkpointing.uturn)
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),

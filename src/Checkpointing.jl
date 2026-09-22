@@ -1,6 +1,5 @@
 module Checkpointing
 
-using LinearAlgebra
 using DataStructures
 using Serialization
 using HDF5
@@ -60,7 +59,6 @@ export instantiate
 export reset!
 export AbstractStorage, ArrayStorage, HDF5Storage
 export Revolve, Periodic, Online_r2
-export serialize, deserialize
 
 function serialize(x)
     s = IOBuffer()
@@ -113,36 +111,43 @@ not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
 `loop` expression.
 """
 macro ad_checkpoint(alg, loop)
-    range = loop.args[1].args[2]
-    _iterator = loop.args[1].args[1]
     body = loop.args[2]
     i = gensym()
     fbody = gensym("fbody")
     wbody = gensym("wbody")
+    rng = gensym("range")
     if loop.head == :for
+        # Only reach into the loop header once the loop kind is known: a
+        # `while` condition may be a bare symbol, which has no `.args`.
+        _iterator = loop.args[1].args[1]
         range = loop.args[1].args[2]
         ex = quote
             let
-                if !isa($range, UnitRange{Int64})
+                # Bind the range once -- interpolating `$range` at each use
+                # would evaluate the user's expression several times.
+                $rng = $range
+                if !isa($rng, UnitRange{Int64})
                     error(
-                        "Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($range)) is not supported.",
+                        "Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($rng)) is not supported.",
                     )
                 end
                 $fbody = $i -> begin
                     $_iterator = $i
                     $body
                 end
-                Checkpointing.checkpoint_for($fbody, $alg, $range)
+                Checkpointing.checkpoint_for($fbody, $alg, $rng)
             end
         end
     elseif loop.head == :while
         ex = quote
-            $wbody = () -> begin
-                $body
-                # return loop condition
-                return $(loop.args[1])
+            let
+                $wbody = () -> begin
+                    $body
+                    # return loop condition
+                    return $(loop.args[1])
+                end
+                Checkpointing.checkpoint_while($wbody, $alg)
             end
-            Checkpointing.checkpoint_while($wbody, $alg)
         end
     else
         error("Checkpointing.jl: Unknown loop construct.")

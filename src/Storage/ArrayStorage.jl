@@ -4,8 +4,8 @@
 Array (RAM) storage for checkpointing.
 
 """
-struct ArrayStorage{FT} <: AbstractStorage where {FT}
-    _fstorage::Array{FT}
+struct ArrayStorage{FT} <: AbstractStorage
+    _fstorage::Vector{FT}
 end
 
 function Base.similar(storage::ArrayStorage{MT}, ::Type{T}) where {MT,T}
@@ -21,8 +21,8 @@ function save!(storage::ArrayStorage{FT}, v::FT, i::Int64) where {FT}
     storage._fstorage[i] = v
 end
 
-Base.ndims(::Type{ArrayStorage{FT}}) where {FT} = 1
-Base.size(storage::ArrayStorage{FT}) where {FT} = size(storage._storage)
+Base.ndims(::Type{<:ArrayStorage}) = 1
+Base.size(storage::ArrayStorage) = size(storage._fstorage)
 
 function load(body::MT, storage::ArrayStorage{MT}, i::Int64) where {MT}
     return storage._fstorage[i]

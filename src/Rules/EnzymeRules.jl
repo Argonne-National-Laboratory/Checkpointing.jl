@@ -164,5 +164,3 @@ function reverse(
     Checkpointing.rev_checkpoint_while(config, body_input, dbody, scheme)
     return (nothing, nothing)
 end
-
-export augmented_primal, reverse
