@@ -7,21 +7,45 @@ using Checkpointing
 
 ```julia
 using Checkpointing
-struct MyStorage{MT} <: AbstractStorage where {MT} end
+struct MyStorage{FT} <: AbstractStorage end
 ```
 and have to implement the following functions.
 
-* A constructor invoked by the user
+* A constructor taking the number of checkpoints
 ```julia
-function MyStorage{MT}(n::Int) where {MT} end
+MyStorage{FT}(checkpoints::Integer) where {FT}
 ```
-* save and load functions for the storage type
+* A `similar` method. A scheme is created before the loop body is known, so it
+  starts out parameterized by `Nothing` and is re-created with the concrete
+  closure type once the reverse pass begins.
 ```julia
-Base.load(body::MT, storage::MyStorage{MT}, i::Int) where {MT}
-Base.save!(body::MT, storage::MyStorage{MT}, value, i::Int) where {MT}
+Base.similar(storage::MyStorage, ::Type{T}) where {T}
 ```
-* Size and dimension functions
+* Store and restore functions. Both are unexported, so a new backend extends
+  `Checkpointing.save!` and `Checkpointing.load!`.
 ```julia
-Base.size(storage::MyStorage{MT}) where {MT}
-Base.ndims(storage::MyStorage{MT}) where {MT}
+Checkpointing.save!(storage::MyStorage{FT}, v::FT, i::Integer) where {FT}
+Checkpointing.load!(body::FT, storage::MyStorage{FT}, i::Integer) where {FT}
 ```
+
+`load!` restores checkpoint `i` **into** `body` and returns it, leaving the
+stored checkpoint intact -- Revolve restores the same slot more than once.
+
+## Allocation and the copy interface
+
+`save!` and `load!` run once per store and restore action, so a backend that
+copies with `deepcopy` allocates a fresh copy of the entire captured state every
+time. On a GPU that is one device allocation per action. Backends should instead
+build on the two functions below, which split the work into an allocation step
+that runs once per slot and a copy step that allocates nothing:
+
+```@docs
+Checkpointing.checkpoint_alloc
+Checkpointing.checkpoint_copy!
+```
+
+`ArrayStorage` fills its slots lazily: the first `save!` to an index allocates
+that slot with `checkpoint_alloc`, and every later `save!` to the same index
+copies into it with `checkpoint_copy!`. The default `checkpoint_copy!` copies
+arrays with `copyto!`, so `CuArray`, `ROCArray`, `oneArray` and `MtlArray` state
+is copied device-to-device without leaving the GPU and without scalar indexing.

@@ -9,7 +9,6 @@ mutable struct Periodic{FT} <: Scheme where {FT}
     period::Int
     verbose::Int
     storage::AbstractStorage
-    gc::Bool
     chkp_dump::Union{Nothing,ChkpDump}
 end
 
@@ -18,7 +17,6 @@ end
         checkpoints::Int;
         storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
         verbose::Int = 0,
-        gc::Bool = true,
         write_checkpoints::Bool = false,
     ) where {MT}
 
@@ -28,7 +26,6 @@ and then restore it when needed.
 - `checkpoints`: is the number of checkpoints used for storage.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
 - `verbose::Int`: Verbosity level for logging and diagnostics.
-- `gc::Bool`: Whether to enable garbage collection (default is `true`).
 - `write_checkpoints::Bool`: Whether to enable writing checkpoints (default is `false`).
 
 The period will be `div(steps, checkpoints)`.
@@ -39,7 +36,6 @@ function Periodic{FT}(
     checkpoints::Int;
     storage::AbstractStorage = ArrayStorage{FT}(checkpoints),
     verbose::Int = 0,
-    gc::Bool = true,
     write_checkpoints::Bool = false,
     write_checkpoints_period::Int = 1,
     write_checkpoints_filename::String = "chkp",
@@ -56,7 +52,6 @@ function Periodic{FT}(
         period,
         verbose,
         storage,
-        gc,
         ChkpDump(
             steps,
             Val(write_checkpoints),
@@ -66,11 +61,11 @@ function Periodic{FT}(
     )
 end
 
-function Periodic(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
+function Periodic(checkpoints::Integer; storage = ArrayStorage, kwargs...)
     return Periodic{Nothing}(
         0,
         checkpoints;
-        storage = eval(storage){Nothing}(checkpoints),
+        storage = _new_storage(storage, checkpoints),
         kwargs...,
     )
 end
@@ -95,7 +90,6 @@ function instantiate(::Type{FT}, periodic::Periodic{Nothing}, steps::Int) where 
         checkpoints;
         verbose = periodic.verbose,
         storage = similar(periodic.storage, FT),
-        gc = periodic.gc,
         write_checkpoints = write_checkpoints,
         write_checkpoints_period = write_checkpoints_period,
         write_checkpoints_filename = write_checkpoints_filename,
@@ -119,28 +113,25 @@ function rev_checkpoint_for(
     alg::Periodic{FT},
     range,
 ) where {FT}
-    body = deepcopy(body_input)
+    body = checkpoint_alloc(body_input)
     model_check_outer = alg.storage
     model_check_inner = ArrayStorage{FT}(alg.period)
-    if !alg.gc
-        GC.enable(false)
-    end
     for i = 1:alg.acp
-        save!(model_check_outer, deepcopy(body), i)
+        save!(model_check_outer, body, i)
         for j = ((i-1)*alg.period):((i)*alg.period-1)
             body(j)
         end
     end
 
     for i = alg.acp:-1:1
-        body = deepcopy(load(body, model_check_outer, i))
+        load!(body, model_check_outer, i)
         for j = 1:alg.period
-            save!(model_check_inner, deepcopy(body), j)
+            save!(model_check_inner, body, j)
             body(j)
         end
         for j = alg.period:-1:1
             dump_prim(alg.chkp_dump, j, body)
-            body = deepcopy(load(body, model_check_inner, j))
+            load!(body, model_check_inner, j)
             Enzyme.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
@@ -148,13 +139,7 @@ function rev_checkpoint_for(
                 Const(j),
             )
             dump_adj(alg.chkp_dump, j, dbody)
-            if !alg.gc
-                GC.gc()
-            end
         end
-    end
-    if !alg.gc
-        GC.enable(true)
     end
     return nothing
 end

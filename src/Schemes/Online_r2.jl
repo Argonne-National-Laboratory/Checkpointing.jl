@@ -101,10 +101,10 @@ function Online_r2{FT}(
     return online_r2
 end
 
-function Online_r2(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
+function Online_r2(checkpoints::Integer; storage = ArrayStorage, kwargs...)
     return Online_r2{Nothing}(
         checkpoints;
-        storage = eval(storage){Nothing}(checkpoints),
+        storage = _new_storage(storage, checkpoints),
         kwargs...,
     )
 end
@@ -447,7 +447,7 @@ function rev_checkpoint_while(
     dbody::Function,
     alg::Online_r2{FT},
 ) where {FT}
-    body = deepcopy(body_input)
+    body = checkpoint_alloc(body_input)
     model_check = alg.storage
     # model_final = []
     freeindices = Stack{Int64}()
@@ -462,8 +462,7 @@ function rev_checkpoint_while(
         if (next_action.actionflag == Checkpointing.store)
             check = next_action.cpnum + 1
             storemapinv[check] = next_action.iteration
-            # model_check[check] = deepcopy(body)
-            save!(model_check, deepcopy(body), check)
+            save!(model_check, body, check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = oldcapo:(next_action.iteration-1)
                 go = body()
@@ -489,8 +488,7 @@ function rev_checkpoint_while(
         if (next_action.actionflag == Checkpointing.store)
             check = pop!(freeindices)
             storemap[next_action.iteration-1] = check
-            # model_check[check] = deepcopy(body)
-            save!(model_check, deepcopy(body), check)
+            save!(model_check, body, check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
                 body()
@@ -510,7 +508,7 @@ function rev_checkpoint_while(
                 delete!(storemap, next_action.iteration - 1 - 1)
             end
         elseif (next_action.actionflag == Checkpointing.restore)
-            body = deepcopy(load(body, model_check, storemap[next_action.iteration-1]))
+            load!(body, model_check, storemap[next_action.iteration-1])
         elseif next_action.actionflag == Checkpointing.done
             if haskey(storemap, next_action.iteration - 1 - 1)
                 delete!(storemap, next_action.iteration - 1 - 1)

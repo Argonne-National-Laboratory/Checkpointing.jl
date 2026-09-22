@@ -63,6 +63,35 @@ function check_closure_captures(body)
     end
 end
 
+
+"""
+    shadow(body)
+
+The shadow (adjoint) closure paired with an annotated loop body.
+
+Enzyme hands the loop body over as a `Duplicated`, `MixedDuplicated` or `Const`
+annotation. Picking the shadow apart with a chain of `isa` tests infers as
+`Any`, which puts a dynamic dispatch at the entry to the whole reverse sweep and
+rebuilds `Duplicated(body, dbody)` from an `Any` on every iteration of the hot
+loop. Dispatching instead keeps the shadow's type concrete.
+"""
+shadow(body::Duplicated) = body.dval
+shadow(body::MixedDuplicated) = body.dval[]
+
+function shadow(body::Const)
+    # Mixed activity (a closure capturing both a mutable struct and scalars)
+    # makes Enzyme mark the body `Const`. `check_closure_captures` usually
+    # pinpoints the offending capture; fall back to a generic message.
+    check_closure_captures(body)
+    return error(
+        "[Checkpointing.jl]: The loop body was marked as Const by Enzyme, " *
+        "but checkpointing requires an active (Duplicated) closure. " *
+        "Make sure your loop body captures a mutable struct that is being differentiated.",
+    )
+end
+
+shadow(body) = error("Checkpointing.jl: Unknown annotation type for body: $(typeof(body))")
+
 function augmented_primal(
     config,
     func::Const{typeof(Checkpointing.checkpoint_for)},
@@ -75,11 +104,7 @@ function augmented_primal(
     tape_body = deepcopy(body.val)
     # make_zero!(body.dval)
     func.val(body.val, alg.val, range.val)
-    if needs_primal(config)
-        return AugmentedReturn(nothing, nothing, (tape_body,))
-    else
-        return AugmentedReturn(nothing, nothing, (tape_body,))
-    end
+    return AugmentedReturn(nothing, nothing, (tape_body,))
 end
 
 function reverse(
@@ -93,23 +118,7 @@ function reverse(
 )
     (body_input,) = tape
     scheme = instantiate(typeof(body_input), alg.val, length(range.val))
-    dbody = if isa(body, Duplicated)
-        body.dval
-    elseif isa(body, MixedDuplicated)
-        body.dval[]
-    elseif isa(body, Const)
-        # This happens when the closure has mixed activity (e.g., captures both
-        # a mutable struct and scalar variables). Provide a helpful error.
-        check_closure_captures(body)
-        # If check_closure_captures didn't error, give a generic message
-        error(
-            "[Checkpointing.jl]: The loop body was marked as Const by Enzyme, " *
-            "but checkpointing requires an active (Duplicated) closure. " *
-            "Make sure your loop body captures a mutable struct that is being differentiated.",
-        )
-    else
-        error("Checkpointing.jl: Unknown annotation type for body: $(typeof(body))")
-    end
+    dbody = shadow(body)
 
     Checkpointing.rev_checkpoint_for(config, body_input, dbody, scheme, range.val)
     return (nothing, nothing, nothing)
@@ -126,11 +135,7 @@ function augmented_primal(
     tape_body = deepcopy(body.val)
     # make_zero!(body.dval)
     func.val(body.val, alg.val)
-    if needs_primal(config)
-        return AugmentedReturn(nothing, nothing, (tape_body,))
-    else
-        return AugmentedReturn(nothing, nothing, (tape_body,))
-    end
+    return AugmentedReturn(nothing, nothing, (tape_body,))
 end
 
 function reverse(
@@ -143,23 +148,7 @@ function reverse(
 )
     (body_input,) = tape
     scheme = instantiate(typeof(body_input), alg.val)
-    dbody = if isa(body, Duplicated)
-        body.dval
-    elseif isa(body, MixedDuplicated)
-        body.dval[]
-    elseif isa(body, Const)
-        # This happens when the closure has mixed activity (e.g., captures both
-        # a mutable struct and scalar variables). Provide a helpful error.
-        check_closure_captures(body)
-        # If check_closure_captures didn't error, give a generic message
-        error(
-            "[Checkpointing.jl]: The loop body was marked as Const by Enzyme, " *
-            "but checkpointing requires an active (Duplicated) closure. " *
-            "Make sure your loop body captures a mutable struct that is being differentiated.",
-        )
-    else
-        error("Checkpointing.jl: Unknown annotation type for body: $(typeof(body))")
-    end
+    dbody = shadow(body)
 
     Checkpointing.rev_checkpoint_while(config, body_input, dbody, scheme)
     return (nothing, nothing)
