@@ -232,7 +232,7 @@ function next_action!(online::Online_r2)::Action
                 online.numfwd += online.incr
                 if (online.iter == 0)
                     online.capo = online.ch[online.oldind+1]
-                    for i = 0:((online.t + 1) ÷ 2)
+                    for i = 0:((online.t+1)÷2)
                         online.capo += online.incr
                         online.incr = online.incr + 1
                         online.iter = online.iter + 1
