@@ -60,7 +60,7 @@ using Enzyme
                 info = 0
 
                 T, dT =
-                    heat(eval(scheme)(snaps; verbose = info, storage = :HDF5Storage), steps)
+                    heat(eval(scheme)(snaps; verbose = info, storage = HDF5Storage), steps)
 
                 @test isapprox(norm(T), 66.21987468492061, atol = 1e-11)
                 @test isapprox(norm(dT), 6.970279349365908, atol = 1e-11)

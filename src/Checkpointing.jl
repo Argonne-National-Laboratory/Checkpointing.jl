@@ -74,6 +74,26 @@ end
 
 abstract type AbstractStorage end
 
+"""
+    _new_storage(S, checkpoints)
+
+Build the placeholder storage for a scheme that does not yet know its loop body.
+
+`S` is the storage *type*, not its name. Taking a `Symbol` and `eval`ing it -- as
+this used to -- cannot be precompiled, bumps the world age at the call site, and
+cannot name a type that lives in a package extension or in the caller's own
+module.
+"""
+_new_storage(S::Type, checkpoints::Integer) = S{Nothing}(checkpoints)
+
+_new_storage(S::Symbol, ::Integer) = throw(
+    ArgumentError(
+        "[Checkpointing.jl]: `storage` takes the storage type itself, not its name. " *
+        "Use `storage = $S` instead of `storage = :$S`.",
+    ),
+)
+
+include("Storage/copy.jl")
 include("Storage/ArrayStorage.jl")
 include("Storage/HDF5Storage.jl")
 include("ChkpDump.jl")

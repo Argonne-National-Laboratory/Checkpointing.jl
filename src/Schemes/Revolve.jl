@@ -13,7 +13,6 @@ mutable struct Revolve{FT} <: Scheme where {FT}
     stepof::Vector{Int}
     verbose::Int
     storage::AbstractStorage
-    gc::Bool
     chkp_dump::Union{Nothing,ChkpDump}
 end
 
@@ -22,7 +21,6 @@ end
         checkpoints::Int;
         storage::AbstractStorage = ArrayStorage{MT}(checkpoints),
         verbose::Int = 0,
-        gc::Bool = true,
         write_checkpoints::Bool = false,
         write_checkpoints_period::Int = 1,
         write_checkpoints_filename::String = "chkp",
@@ -32,7 +30,6 @@ Creates a new `Revolve` object for checkpointing.
 - `checkpoints`: is the number of checkpoints used for storage.
 - `storage`: is the storage backend to use (default is `ArrayStorage`).
 - `verbose::Int`: Verbosity level for logging and diagnostics.
-- `gc::Bool`: Whether to enable garbage collection (default is `true`).
 - `write_checkpoints::Bool`: Whether to enable writing checkpoints (default is `false`).
 - `write_checkpoints_period::Int`: The period for writing checkpoints (default is `1`).
 - `write_checkpoints_filename::String`: The filename for writing checkpoints (default is `"chkp"`).
@@ -53,7 +50,6 @@ function Revolve{FT}(
     checkpoints::Int;
     storage::AbstractStorage = ArrayStorage{FT}(checkpoints),
     verbose::Int = 0,
-    gc::Bool = true,
     write_checkpoints::Bool = false,
     write_checkpoints_period::Int = 1,
     write_checkpoints_filename::String = "chkp",
@@ -89,7 +85,6 @@ function Revolve{FT}(
         stepof,
         verbose,
         storage,
-        gc,
         ChkpDump(
             steps,
             Val(write_checkpoints),
@@ -111,11 +106,11 @@ function Revolve{FT}(
     return revolve
 end
 
-function Revolve(checkpoints::Integer; storage::Symbol = :ArrayStorage, kwargs...)
+function Revolve(checkpoints::Integer; storage = ArrayStorage, kwargs...)
     return Revolve{Nothing}(
         0,
         checkpoints;
-        storage = eval(storage){Nothing}(checkpoints),
+        storage = _new_storage(storage, checkpoints),
         kwargs...,
     )
 end
@@ -140,7 +135,6 @@ function instantiate(::Type{FT}, revolve::Revolve{Nothing}, steps::Int) where {F
         checkpoints;
         storage = similar(revolve.storage, FT),
         verbose = revolve.verbose,
-        gc = revolve.gc,
         write_checkpoints = write_checkpoints,
         write_checkpoints_period = write_checkpoints_period,
         write_checkpoints_filename = write_checkpoints_filename,
@@ -408,23 +402,20 @@ function rev_checkpoint_for(
     alg::Revolve{FT},
     range,
 ) where {FT}
-    body = deepcopy(body_input)
+    body = checkpoint_alloc(body_input)
     if alg.verbose > 0
         @info "[Checkpointing] Size per checkpoint: $(Base.format_bytes(Base.summarysize(dbody)))"
     end
     storemap = Dict{Int64,Int64}()
     check = 0
     model_check = alg.storage
-    if !alg.gc
-        GC.enable(false)
-    end
     step = alg.steps
     while true
         next_action = next_action!(alg)
         if (next_action.actionflag == Checkpointing.store)
             check = check + 1
             storemap[next_action.iteration-1] = check
-            save!(model_check, deepcopy(body), check)
+            save!(model_check, body, check)
         elseif (next_action.actionflag == Checkpointing.forward)
             for j = next_action.startiteration:(next_action.iteration-1)
                 body(j)
@@ -444,9 +435,6 @@ function rev_checkpoint_for(
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
-            if !alg.gc
-                GC.gc()
-            end
         elseif (next_action.actionflag == Checkpointing.uturn)
             dump_prim(alg.chkp_dump, step, body)
             Enzyme.autodiff(
@@ -457,15 +445,12 @@ function rev_checkpoint_for(
             )
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
-            if !alg.gc
-                GC.gc()
-            end
             if haskey(storemap, next_action.iteration - 1 - 1)
                 delete!(storemap, next_action.iteration - 1 - 1)
                 check = check - 1
             end
         elseif (next_action.actionflag == Checkpointing.restore)
-            body = deepcopy(load(body, model_check, storemap[next_action.iteration-1]))
+            load!(body, model_check, storemap[next_action.iteration-1])
         elseif next_action.actionflag == Checkpointing.done
             if haskey(storemap, next_action.iteration - 1 - 1)
                 delete!(storemap, next_action.iteration - 1 - 1)
@@ -473,9 +458,6 @@ function rev_checkpoint_for(
             end
             break
         end
-    end
-    if !alg.gc
-        GC.enable(true)
     end
     return nothing
 end
