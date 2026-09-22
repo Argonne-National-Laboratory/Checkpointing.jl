@@ -24,6 +24,7 @@ makedocs(
         "Schemes" => "schemes.md",
         "Rules" => "rules.md",
         "Storage" => "storage.md",
+        "GPU" => "gpu.md",
         "API" => "lib/checkpointing.md",
     ],
 )

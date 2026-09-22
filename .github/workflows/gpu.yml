@@ -1,0 +1,25 @@
+name: GPU tests
+
+# Manual only: this needs a self-hosted runner with an NVIDIA GPU, and a job
+# waiting on a runner that is not there would block every pull request.
+on:
+  workflow_dispatch:
+
+jobs:
+  test-gpu:
+    name: GPU tests (julia ${{ matrix.julia-version }})
+    runs-on: [self-hosted, linux, X64, gpu, cuda]
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['lts', '1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - name: Instantiate the GPU test environment
+        run: julia --project=test/gpu -e 'using Pkg; Pkg.instantiate()'
+      - name: Run the GPU tests
+        run: julia --project=test/gpu test/gpu/runtests.jl
