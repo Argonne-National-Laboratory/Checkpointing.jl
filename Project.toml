@@ -1,7 +1,7 @@
 name = "Checkpointing"
 uuid = "eb46d486-4f9c-4c3d-b445-a617f2a2f1ca"
 authors = ["Michel Schanen <mschanen@anl.gov>", "Sri Hari Krishna Narayanan <snarayan@mcs.anl.gov>"]
-version = "0.12.0"
+version = "0.13.0"
 
 [deps]
 Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
@@ -15,7 +15,7 @@ HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 CheckpointingHDF5Ext = "HDF5"
 
 [compat]
-Enzyme = "0.11, 0.12, 0.13"
+Enzyme = "0.13"
 EnzymeCore = "0.8"
 HDF5 = "0.16, 0.17"
 Serialization = "1.10"

@@ -16,15 +16,11 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 
 ## Storage
 * ArrayStorage: Stores all checkpoints values in an array of type `Array`
-* HDF5Storage: Stores all checkpoints values in an HDF5 file
+* HDF5Storage: Stores all checkpoints values in an HDF5 file (requires `using HDF5`; provided by a package extension)
 ## Limitations
 * Currently, the package only supports `UnitRange` ranges in `for` loops. We will add range types on a per-need basis. Please, open an issue if you need support for a specific range type.
 * We only support Enzyme as the differentiation tool of the loop body. This is due to our strict requirement for a mutation-enabled AD tool in our projects. However, there is no fundamental reason why we could not support other AD tools. Please, open an issue if you need support for a specific AD tool.
 * We don't support any activity analysis. This implies that loop iterators have to be part of the checkpointed struct if they are used in the loop body. Currently, we store the entire struct at each checkpoint. This is not necessary, and we will add support for storing only the required fields in the future.
-## Future
-The following features are planned for development:
-
-* Support checkpoints on GPUs
 ## Quick Start
 
 
@@ -44,3 +40,5 @@ Depth = 1
 ```
 ## References
 [1] Andreas Griewank and Andrea Walther. 2000. Algorithm 799: revolve: an implementation of checkpointing for the reverse or adjoint mode of computational differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI:https://doi.org/10.1145/347837.347846
+
+[2] Philipp Stumm and Andrea Walther. 2010. New algorithms for optimal online checkpointing. SIAM J. Sci. Comput. 32, 2, 836–854. DOI:https://doi.org/10.1137/080742439
