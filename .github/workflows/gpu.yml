@@ -31,6 +31,6 @@ jobs:
           version: ${{ matrix.julia-version }}
       - uses: julia-actions/cache@v2
       - name: Instantiate the GPU test environment
-        run: julia --project=test/gpu -e 'using Pkg; Pkg.instantiate()'
+        run: julia --project=test/gpu -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
       - name: Run the GPU tests
         run: julia --project=test/gpu test/gpu/runtests.jl

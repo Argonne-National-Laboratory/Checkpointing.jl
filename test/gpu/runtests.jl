@@ -1,7 +1,7 @@
 # GPU tests. These live in their own environment so the CPU suite never has to
 # install CUDA:
 #
-#     julia --project=test/gpu -e 'using Pkg; Pkg.instantiate()'
+#     julia --project=test/gpu -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 #     julia --project=test/gpu test/gpu/runtests.jl
 using Test
 using CUDA
