@@ -1,7 +1,7 @@
 # Checkpointing 
 [![CI](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions/workflows/action.yml/badge.svg?branch=main)](https://github.com/Argonne-National-Laboratory/Checkpointing.jl/actions/workflows/action.yml)
 [![][docs-stable-img]][docs-stable-url] 
-[![DOI](https://zenodo.org/badge/417181074.svg)](https://zenodo.org/badge/latestdoi/417181074)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5920962.svg)](https://doi.org/10.5281/zenodo.5920962)
 
 This package provides checkpointing schemes for adjoint computations using automatic differentiation (AD) of time-stepping loops. Currently, we support the macro `@ad_checkpoint`, which differentiates and checkpoints a mutable struct used in a while or for loop with a `UnitRange`.
 
