@@ -37,79 +37,73 @@ loop body Enzyme can differentiate on a device.
 * [TreeverseAlgorithm.jl](https://github.com/GiggleLiu/TreeverseAlgorithm.jl): Visualization of the Revolve algorithm
 * [Burgers.jl](https://github.com/DJ4Earth/Burgers.jl): A showcase of checkpointing applied to an MPI parallelized 2D Burgers equation solver
 
-## Usage: Example 1D heat equation
+## Usage: Example 1D Burgers equation
 
-We present an example of a differentiated explicit 1D heat equation. Notice that the heat equation is a linear differential equation and does not require adjoint checkpointing. This example only illustrates the Checkpointing.jl API. The macro `@ad_checkpoint` covers the transformation of `for` loops with `UnitRange` ranges where `tsteps=500` is the number of time steps. As a checkpointing scheme, we use Revolve and use a maximum of only 4 snapshots. This implies that instead of requiring to save all 500 temperature fields for the gradient computation, we now only need 4. As a trade-off, recomputation is used to recompute intermediate temperature fields.
+The viscous Burgers equation `u_t + (u²/2)_x = ν u_xx` is nonlinear, so the adjoint of each time step depends on the state at that step. A reverse pass therefore needs every forward state, and storing them all takes memory proportional to the number of time steps. Checkpointing stores a few of them and recomputes the rest.
+
+We start from a Gaussian bump on the periodic unit interval. Its crest travels fastest, so the front steepens into a shock. The time loop is wrapped in `@ad_checkpoint`, and `Revolve(10)` keeps 10 of the 500 states, recomputing the others during the reverse pass.
 
 ```julia
-# Explicit 1D heat equation
+# Viscous Burgers equation u_t + (u²/2)_x = ν u_xx on the periodic unit interval.
+# The crest of a Gaussian bump travels fastest, so the wave steepens into a shock.
 using Checkpointing
 using Enzyme
-using Plots
 
-mutable struct Heat
-    Tnext::Vector{Float64}
-    Tlast::Vector{Float64}
-    n::Int
-    λ::Float64
-    tsteps::Int
+mutable struct Burgers
+    u::Vector{Float64}      # state at the current time step
+    ulast::Vector{Float64}  # state at the previous time step
+    ν::Float64              # viscosity
+    Δx::Float64
+    Δt::Float64
 end
 
-function advance(heat::Heat)
-    next = heat.Tnext
-    last = heat.Tlast
-    λ = heat.λ
-    n = heat.n
-    for i = 2:(n-1)
-        next[i] = last[i] + λ * (last[i-1] - 2 * last[i] + last[i+1])
+Burgers(u0; ν = 0.005, Δt = 1e-3) = Burgers(copy(u0), similar(u0), ν, 1 / length(u0), Δt)
+
+# One explicit Euler step, central differences, periodic boundaries.
+function step!(b::Burgers)
+    b.ulast .= b.u
+    u, n = b.ulast, length(b.u)
+    for i = 1:n
+        l = i == 1 ? n : i - 1
+        r = i == n ? 1 : i + 1
+        flux = (u[r]^2 - u[l]^2) / (4 * b.Δx)
+        diffusion = b.ν * (u[r] - 2 * u[i] + u[l]) / b.Δx^2
+        b.u[i] = u[i] + b.Δt * (diffusion - flux)
     end
     return nothing
 end
 
-
-function sumheat(heat::Heat, scheme::Union{Revolve,Periodic}, tsteps::Int64)
-    # AD: Create shadow copy for derivatives
-    @ad_checkpoint scheme for i = 1:tsteps
-        heat.Tlast .= heat.Tnext
-        advance(heat)
+# u(x_k, T) after `steps` time steps.
+function probe(b::Burgers, scheme::Scheme, steps::Int, k::Int)
+    @ad_checkpoint scheme for i = 1:steps
+        step!(b)
     end
-    return reduce(+, heat.Tnext)
+    return b.u[k]
 end
 
-function heat(scheme::Scheme, tsteps::Int)
-    n = 100
-    Δx = 0.1
-    Δt = 0.001
-    # Select μ such that λ ≤ 0.5 for stability with μ = (λ*Δt)/Δx^2
-    λ = 0.5
-
-    # Create object from struct. tsteps is not needed for a for-loop
-    heat = Heat(zeros(n), zeros(n), n, λ, tsteps)
-    # Shadow copy for Enzyme
-    dheat = Heat(zeros(n), zeros(n), n, λ, tsteps)
-
-    # Boundary conditions
-    heat.Tnext[1] = 20.0
-    heat.Tnext[end] = 0
-
-    # Compute gradient
-    autodiff(
-        Enzyme.ReverseWithPrimal,
-        sumheat,
-        Duplicated(heat, dheat),
-        Const(scheme),
-        Const(tsteps),
-    )
-
-    return heat.Tnext, dheat.Tnext[2:(end-1)]
+# The gradient of u(x_k, T) with respect to the initial condition u(x, 0).
+function sensitivity(u0::Vector{Float64}, scheme::Scheme, steps::Int, k::Int)
+    b = Burgers(u0)
+    db = Enzyme.make_zero(b)
+    autodiff(Reverse, probe, Duplicated(b, db), Const(scheme), Const(steps), Const(k))
+    return db.u
 end
-tsteps = 500
-T, dT = heat(Revolve(4), tsteps)
-# Plot function values
-plot(T)
-# Plot gradient with respect of sum(T[end]) with respect to T[1].
-plot(dT)
+
+n = 256
+x = ((1:n) .- 0.5) ./ n
+u0 = exp.(-((x .- 0.3) ./ 0.1) .^ 2)
+k = argmin(abs.(x .- 0.6))                  # probe the shock at x* = 0.6
+du0 = sensitivity(u0, Revolve(10), 500, k)  # T = 500 * Δt = 0.5
 ```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/src/assets/burgers-dark.png">
+  <img alt="Top: a Gaussian bump steepening into a shock between t = 0 and t = 0.5, with probe points at x = 0.45 and x = 0.60 on the final profile. Bottom: the sensitivity of each probe to the initial condition; the x = 0.45 probe depends on a narrow patch near x = 0.21, the x = 0.60 probe almost uniformly on x = 0.3 to 0.6." src="docs/src/assets/burgers.png">
+</picture>
+
+One reverse pass gives the gradient of `u(x*, T)` with respect to the whole initial condition. A point on the smooth ramp behind the crest (x* = 0.45) depends only on a narrow patch of the initial condition near x = 0.21, where its characteristic starts. A point in the shock (x* = 0.60) depends almost equally on everything between x = 0.3 and x = 0.6: all of that fluid has run into the shock, and the shock's position depends on how much of it there was. Its total sensitivity is almost 30 times larger.
+
+The code is in `examples/burgers.jl`, and `examples/burgers_plots.jl` draws the figure.
 
 [1] Andreas Griewank and Andrea Walther, Algorithm 799: Revolve: An Implementation of Checkpointing for the Reverse or Adjoint Mode of Computational Differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI: [10.1145/347837.347846](https://doi.org/10.1145/347837.347846)
 
