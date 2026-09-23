@@ -21,6 +21,12 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 * ArrayStorage: Stores all checkpoints values in an array of type `Array`
 * HDF5Storage: Stores all checkpoints values in an HDF5 file (requires `using HDF5`; provided by a package extension)
 
+## GPU
+Checkpoints of GPU arrays (`CuArray`, `ROCArray`, ...) stay on the device and are
+refilled in place, with no GPU dependency in the package. See
+`examples/heat_gpu.jl` and the GPU page of the documentation for how to write a
+loop body Enzyme can differentiate on a device.
+
 ## Installation
 
 ```julia

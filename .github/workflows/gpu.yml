@@ -1,0 +1,36 @@
+name: GPU tests
+
+# Runs on the self-hosted CUDA runner (kkt). The check is not required, so a job
+# queued while the runner is offline does not block merging.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  test-gpu:
+    name: GPU tests (julia ${{ matrix.julia-version }})
+    # The repo is public: never run code from a fork's pull request on the
+    # self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, X64, gpu, cuda]
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['lts', '1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - name: Instantiate the GPU test environment
+        run: julia --project=test/gpu -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+      - name: Run the GPU tests
+        run: julia --project=test/gpu test/gpu/runtests.jl
