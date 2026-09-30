@@ -123,7 +123,8 @@ mutable struct EnzymeSchedule{S,A}
     # With `save_state`, the scheme's storage holds the loop body and the
     # regions go here; without, the scheme's storage holds the regions.
     regions::Union{Nothing,ArrayStorage{Vector{UInt8}}}
-    # Slot -1: the state the reverse sweep starts from, put back at its end.
+    # The driver's own slots: -1, the state the reverse sweep starts from, put
+    # back at its end, and -2, the state before the last step.
     entry::AbstractStorage
     entry_regions::ArrayStorage{Vector{UInt8}}
 end
@@ -140,12 +141,13 @@ function _slot_storage(s::EnzymeSchedule{<:Periodic}, slot)
 end
 
 # The storage and index for the state (loop body or regions) of `slot`.
-_state_storage(s::EnzymeSchedule, slot) = slot == -1 ? (s.entry, 1) : _slot_storage(s, slot)
+_state_storage(s::EnzymeSchedule, slot) =
+    slot < 0 ? (s.entry, -slot) : _slot_storage(s, slot)
 
 # The storage and index for the regions of `slot`.
 function _region_storage(s::EnzymeSchedule, slot)
     s.regions === nothing && return _state_storage(s, slot)
-    slot == -1 && return (s.entry_regions, 1)
+    slot < 0 && return (s.entry_regions, -slot)
     return (s.regions, slot + 1)
 end
 
@@ -154,7 +156,7 @@ _slots(scheme::Periodic) = scheme.acp + (scheme.steps == 0 ? 0 : scheme.period)
 
 function _new_schedule(scheme, actions, inner, segments, bytes, state::Bool)
     regions = state ? ArrayStorage{Vector{UInt8}}(max(_slots(scheme), 1)) : nothing
-    entry = ArrayStorage{state ? Any : Vector{UInt8}}(1)
+    entry = ArrayStorage{state ? Any : Vector{UInt8}}(2)
     return EnzymeSchedule(
         scheme,
         actions,
@@ -163,7 +165,7 @@ function _new_schedule(scheme, actions, inner, segments, bytes, state::Bool)
         segments,
         regions,
         entry,
-        ArrayStorage{Vector{UInt8}}(1),
+        ArrayStorage{Vector{UInt8}}(2),
     )
 end
 
