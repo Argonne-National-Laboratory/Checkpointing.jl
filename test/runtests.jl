@@ -86,6 +86,7 @@ using HDF5
     end
     include("correctness.jl")
     include("burgers.jl")
+    include("enzyme_abi.jl")
     @testset "Test writing checkpoints out" begin
         include("output_chkp.jl")
         @testset "$scheme" for scheme in [:Revolve, :Periodic]
