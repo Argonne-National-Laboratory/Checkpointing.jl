@@ -160,15 +160,16 @@ end
 
 _getfields(obj, fields) = foldl(getfield, fields; init = obj)
 
-# The object the pointer field at byte `offset` of `obj` points to, or nothing
-# if that is not a Julia object reference (an array's data, say).
-function _deref(obj, offset::Int)
-    obj isa AbstractArray && return nothing
-    field = _field_at(typeof(obj), offset)
+# The fields leading to the object the pointer field at byte `offset` of an
+# object of type `T` points to, or nothing if that is not a Julia object
+# reference (an array's data, say).
+function _deref_fields(T::DataType, offset::Int)
+    T <: AbstractArray && return nothing
+    field = _field_at(T, offset)
     field === nothing && return nothing
     fields, ft, rest = field
     (rest == 0 && !_inline(ft)) || return nothing
-    return _getfields(obj, fields)
+    return fields
 end
 
 """
@@ -183,44 +184,99 @@ mutable struct MaskedSnapshot
     scalars::Vector{Any}
 end
 
-# The pieces of the loop body in `box` that a snapshot holds: whole objects, and
-# (object, field) pairs of mutable objects.
-function _leaves(sched, box)
-    objects = Any[]
-    scalars = Tuple{Any,Int}[]
-    seen = IdDict{Any,Nothing}()
+# How to find one piece of the loop body a snapshot holds: the fields to follow
+# from the box, each after checking the type of the object it is taken from,
+# and at the end the whole object (field 0) or a scalar field of a mutable one
+# of type `owner`.
+struct Leaf
+    hops::Vector{Tuple{DataType,Vector{Int}}}
+    owner::DataType
+    field::Int
+end
+
+# The leaves of the snapshot, worked out from the types of the objects met in
+# `box`: whole objects, and scalar fields of mutable objects.
+function _plan_leaves(sched, box)
+    leaves = Leaf[]
     for access in sched.paths
         keep = access.write || (sched.snapshot === :accessed && access.read)
         # The box itself only ever holds the body.
         (keep && !isempty(access.path)) || continue
         obj = box
+        hops = Tuple{DataType,Vector{Int}}[]
         whole = access.offset < 0
         for offset in access.path
-            next = _deref(obj, offset)
-            if next === nothing
+            fields = _deref_fields(typeof(obj), offset)
+            if fields === nothing
                 whole = true
                 break
             end
-            obj = next
+            push!(hops, (typeof(obj), collect(Int, fields)))
+            obj = _getfields(obj, fields)
         end
-        if whole || obj isa AbstractArray
-            if !haskey(seen, obj)
-                seen[obj] = nothing
-                push!(objects, obj)
+        leaf = if whole || obj isa AbstractArray
+            Leaf(hops, Nothing, 0)
+        else
+            field = _field_at(typeof(obj), access.offset)
+            if field === nothing || !ismutable(obj)
+                Leaf(hops, Nothing, 0)
+            else
+                i = field[1][1]
+                # A field holding references only matters through what they
+                # point to.
+                isbitstype(fieldtype(typeof(obj), i)) || continue
+                Leaf(hops, typeof(obj), i)
             end
-            continue
         end
-        field = _field_at(typeof(obj), access.offset)
-        if field === nothing || !ismutable(obj)
-            haskey(seen, obj) || (seen[obj] = nothing; push!(objects, obj))
-            continue
-        end
-        i = field[1][1]
-        # A field holding references only matters through what they point to.
-        isbitstype(fieldtype(typeof(obj), i)) || continue
-        (obj, i) in scalars || push!(scalars, (obj, i))
+        any(l -> l.hops == leaf.hops && l.field == leaf.field, leaves) ||
+            push!(leaves, leaf)
     end
-    return objects, scalars
+    return leaves
+end
+
+# Fills `sched.live` with the leaves in `box`; false if a type on the way is not
+# the one the plan was made for.
+function _fill_leaves!(sched, leaves::Vector{Leaf}, box)
+    live = sched.live
+    empty!(live.objects)
+    empty!(live.scalars)
+    empty!(sched.owners)
+    for leaf in leaves
+        obj = box
+        for (T, fields) in leaf.hops
+            typeof(obj) === T || return false
+            for f in fields
+                obj = getfield(obj, f)
+            end
+        end
+        if leaf.field == 0
+            _push_new!(live.objects, obj)
+        else
+            typeof(obj) === leaf.owner || return false
+            push!(sched.owners, (obj, leaf.field))
+            push!(live.scalars, getfield(obj, leaf.field))
+        end
+    end
+    return true
+end
+
+function _push_new!(objects::Vector{Any}, obj)
+    for o in objects
+        o === obj && return objects
+    end
+    return push!(objects, obj)
+end
+
+# The pieces of the loop body in `box` that a snapshot holds, in `sched.live`
+# (their owners in `sched.owners`). The plan is made once per schedule, and
+# again only if the body holds objects of other types.
+function _leaves!(sched, box)
+    leaves = sched.leaves
+    if leaves === nothing || !_fill_leaves!(sched, leaves, box)
+        leaves = sched.leaves = _plan_leaves(sched, box)
+        _fill_leaves!(sched, leaves, box)
+    end
+    return sched.live
 end
 
 """
@@ -228,34 +284,52 @@ end
 
 One run of a scheme through the C interface, from `init` to `finalize`.
 """
-mutable struct EnzymeSchedule{S,A}
+mutable struct EnzymeSchedule{S,A,ST,I,E}
+    # The callbacks that run for each step, compiled for this type of schedule;
+    # the scheme table's forward to them, so none dispatches on the schedule.
+    # First, at fixed offsets, for `_callback`.
+    next_action_cb::Ptr{Cvoid}
+    store_cb::Ptr{Cvoid}
+    restore_cb::Ptr{Cvoid}
+    save_state_cb::Ptr{Cvoid}
+    load_state_cb::Ptr{Cvoid}
     scheme::S
     actions::A
     buffer::Vector{UInt8}
+    # The scheme's storage, typed: the scheme's own field is abstract.
+    storage::ST
     # Periodic: the storage for the steps of the segment being reversed.
-    inner::Union{Nothing,AbstractStorage}
+    inner::I
     segments::Int
     # With `save_state`, the scheme's storage holds the loop body and the
     # regions go here; without, the scheme's storage holds the regions.
     regions::Union{Nothing,ArrayStorage{Vector{UInt8}}}
     # The driver's own slots: -1, the state the reverse sweep starts from, put
     # back at its end, and -2, the state before the last step.
-    entry::AbstractStorage
+    entry::E
     entry_regions::ArrayStorage{Vector{UInt8}}
     # What the step accesses through the loop body (from Enzyme's set_paths),
     # and which of it a snapshot holds: nothing = the whole body.
     paths::Union{Nothing,Vector{AccessPath}}
     snapshot::Symbol
-    # Bytes copied into snapshots, for LAST_SNAPSHOT_BYTES.
-    snapshot_bytes::Int
+    # How to find what a masked snapshot holds (from `paths`), and the snapshot
+    # of the live state it is copied from or to, with the objects owning its
+    # scalars.
+    leaves::Union{Nothing,Vector{Leaf}}
+    live::MaskedSnapshot
+    owners::Vector{Tuple{Any,Int}}
+    # Bytes copied into snapshots, for LAST_SNAPSHOT_BYTES: the size of the
+    # first snapshot, and how many were taken.
+    snapshot_size::Int
+    snapshots::Int
 end
 
 """
     LAST_SNAPSHOT_BYTES[]
 
 The bytes the last schedule run through Enzyme copied into snapshots of the loop
-body, summed over all of them. For inspecting what `EnzymeLLVM`'s `snapshot`
-option saves.
+body, summed over all of them (each counted at the size of the first). For
+inspecting what `EnzymeLLVM`'s `snapshot` option saves.
 """
 const LAST_SNAPSHOT_BYTES = Ref(0)
 
@@ -266,11 +340,10 @@ _actions(scheme::Revolve) = scheme
 
 # The storage and index for the snapshot of the state before `step`, in
 # `slot`, to `store` or to restore.
-_slot_storage(s::EnzymeSchedule{<:Revolve}, slot, step, store) =
-    (s.scheme.storage, slot + 1)
+_slot_storage(s::EnzymeSchedule{<:Revolve}, slot, step, store) = (s.storage, slot + 1)
 
 function _slot_storage(s::EnzymeSchedule{<:Periodic}, slot, step, store)
-    slot < s.segments && return (s.scheme.storage, slot + 1)
+    slot < s.segments && return (s.storage, slot + 1)
     return (s.inner, slot - s.segments + 1)
 end
 
@@ -290,7 +363,7 @@ function _slot_storage(s::EnzymeSchedule{<:Online_r2}, slot, step, store)
     else
         i = a.storemap[step]
     end
-    return (s.scheme.storage, i)
+    return (s.storage, i)
 end
 
 # The storage and index for the state (loop body or regions) of `slot`.
@@ -308,34 +381,38 @@ _slots(scheme::Revolve) = scheme.acp
 _slots(scheme::Periodic) = scheme.acp + (scheme.steps == 0 ? 0 : scheme.period)
 _slots(scheme::Online_r2) = scheme.acp
 
-function _new_schedule(
-    scheme,
-    actions,
-    inner,
-    segments,
-    bytes,
-    state::Bool,
-    snapshot::Symbol = :all,
-)
+function _new_schedule(scheme, actions, inner, segments, bytes, ::Type{FT}) where {FT}
+    state = FT !== Vector{UInt8}
     regions = state ? ArrayStorage{Vector{UInt8}}(max(_slots(scheme), 1)) : nothing
-    entry = ArrayStorage{state ? Any : Vector{UInt8}}(2)
-    return EnzymeSchedule(
+    entry = ArrayStorage{FT}(2)
+    sched = EnzymeSchedule(
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
         scheme,
         actions,
         zeros(UInt8, bytes),
+        scheme.storage,
         inner,
         segments,
         regions,
         entry,
         ArrayStorage{Vector{UInt8}}(2),
         nothing,
-        snapshot,
+        :all,
+        nothing,
+        MaskedSnapshot(Any[], Any[]),
+        Tuple{Any,Int}[],
+        0,
         0,
     )
+    return _set_callbacks!(sched)
 end
 
-# With `state`, snapshots are of the loop body (whose type is not known here),
-# otherwise of the bytes of the regions.
+# `FT` is what a snapshot is: `Vector{UInt8}` for the bytes of the regions, or
+# the loop body (or what of it Enzyme says the step accesses).
 _for_loop(alg, steps) =
     steps >= 0 || error(
         "Checkpointing.jl: $(nameof(typeof(alg))) needs the number of iterations; use Online_r2 for a while loop",
@@ -405,30 +482,44 @@ function set_nsteps!(a::OnlineActions, steps::Int)
 end
 set_nsteps!(a, steps::Int) = a
 
-function enzyme_schedule(alg::Online_r2{Nothing}, steps::Int, bytes::Int, state::Bool)
+function enzyme_schedule(
+    alg::Online_r2{Nothing},
+    steps::Int,
+    bytes::Int,
+    ::Type{FT},
+) where {FT}
     steps < 0 || error("Checkpointing.jl: Online_r2 schedules while loops")
-    scheme = instantiate(state ? Any : Vector{UInt8}, alg)
+    scheme = instantiate(FT, alg)
     actions = OnlineActions(scheme, 0, nothing, false, false, Dict{Int,Int}(), Int[])
-    return _new_schedule(scheme, actions, nothing, 0, bytes, state)
+    return _new_schedule(scheme, actions, nothing, 0, bytes, FT)
 end
 
-function enzyme_schedule(alg::Revolve{Nothing}, steps::Int, bytes::Int, state::Bool)
+function enzyme_schedule(
+    alg::Revolve{Nothing},
+    steps::Int,
+    bytes::Int,
+    ::Type{FT},
+) where {FT}
     _for_loop(alg, steps)
-    scheme = instantiate(state ? Any : Vector{UInt8}, alg, steps)
-    return _new_schedule(scheme, scheme, nothing, 0, bytes, state)
+    scheme = instantiate(FT, alg, steps)
+    return _new_schedule(scheme, scheme, nothing, 0, bytes, FT)
 end
 
-function enzyme_schedule(alg::Periodic{Nothing}, steps::Int, bytes::Int, state::Bool)
+function enzyme_schedule(
+    alg::Periodic{Nothing},
+    steps::Int,
+    bytes::Int,
+    ::Type{FT},
+) where {FT}
     _for_loop(alg, steps)
-    FT = state ? Any : Vector{UInt8}
     scheme = instantiate(FT, alg, steps)
     actions = PeriodicActions(steps, scheme.acp)
     period = steps == 0 ? 0 : cld(steps, actions.segments)
     inner = ArrayStorage{FT}(max(period, 1))
-    return _new_schedule(scheme, actions, inner, actions.segments, bytes, state)
+    return _new_schedule(scheme, actions, inner, actions.segments, bytes, FT)
 end
 
-function enzyme_schedule(alg::Scheme, steps::Int, bytes::Int, state::Bool)
+function enzyme_schedule(alg::Scheme, steps::Int, bytes::Int, ::Type)
     error(
         "Checkpointing.jl: $(typeof(alg)) cannot schedule a checkpointed for loop through Enzyme",
     )
@@ -468,26 +559,31 @@ end
 _schedule(state::Ptr{Cvoid}) = unsafe_pointer_to_objref(state)::EnzymeSchedule
 
 function _enzyme_init(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64, state::Bool)
-    alg = unsafe_pointer_to_objref(data)
-    snapshot = :all
-    if alg isa EnzymeLLVM
-        snapshot = alg.snapshot
-        alg = alg.scheme
-    end
-    alg::Scheme
-    sched = enzyme_schedule(alg, Int(nsteps), Int(bytes), state)
-    sched.snapshot = snapshot
+    sched = _schedule_for(unsafe_pointer_to_objref(data), Int(nsteps), Int(bytes), state)
     LIVE_SCHEDULES[sched] = nothing
     return pointer_from_objref(sched)
 end
+
+_schedule_for(alg::Scheme, nsteps, bytes, state) =
+    enzyme_schedule(alg, nsteps, bytes, state ? Any : Vector{UInt8})
 
 _enzyme_init_regions(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid} =
     _enzyme_init(data, nsteps, bytes, false)
 _enzyme_init_state(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid} =
     _enzyme_init(data, nsteps, bytes, true)
 
+# The callbacks that run for each step call the `k`th callback of the schedule
+# at `state`, compiled for its type (`_schedule` cannot know it; see
+# `_set_callbacks!`).
+_callback(state::Ptr{Cvoid}, k) = unsafe_load(Ptr{Ptr{Cvoid}}(state), k)
+
 function _enzyme_next_action(state::Ptr{Cvoid}, out::Ptr{Action})::Cvoid
-    unsafe_store!(out, next_action!(_schedule(state).actions))
+    ccall(_callback(state, 1), Cvoid, (Ptr{Cvoid}, Ptr{Action}), state, out)
+    return nothing
+end
+
+function _next_action!(sched::EnzymeSchedule, out::Ptr{Action})
+    unsafe_store!(out, next_action!(sched.actions))
     return nothing
 end
 
@@ -498,7 +594,20 @@ function _enzyme_store(
     regions::Ptr{EnzymeCkptRegion},
     n::UInt64,
 )::Cvoid
-    sched = _schedule(state)
+    ccall(
+        _callback(state, 2),
+        Cvoid,
+        (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64),
+        state,
+        slot,
+        step,
+        regions,
+        n,
+    )
+    return nothing
+end
+
+function _store!(sched::EnzymeSchedule, slot, step, regions, n)
     storage, i = _region_storage(sched, slot, step, true)
     save!(storage, _pack!(sched.buffer, regions, n), i)
     return nothing
@@ -511,7 +620,20 @@ function _enzyme_restore(
     regions::Ptr{EnzymeCkptRegion},
     n::UInt64,
 )::Cvoid
-    sched = _schedule(state)
+    ccall(
+        _callback(state, 3),
+        Cvoid,
+        (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64),
+        state,
+        slot,
+        step,
+        regions,
+        n,
+    )
+    return nothing
+end
+
+function _restore!(sched::EnzymeSchedule, slot, step, regions, n)
     storage, i = _region_storage(sched, slot, step, false)
     load!(sched.buffer, storage, i)
     _unpack!(regions, n, sched.buffer)
@@ -532,18 +654,43 @@ function _enzyme_save_state(
     step::Int64,
     env::Ptr{Cvoid},
 )::Cvoid
-    sched = _schedule(state)
+    ccall(
+        _callback(state, 4),
+        Cvoid,
+        (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid}),
+        state,
+        slot,
+        step,
+        env,
+    )
+    return nothing
+end
+
+_save_state_env!(sched::EnzymeSchedule, slot, step, env) =
+    _save_state!(sched, slot, step, _loop_box(env))
+
+# What snapshots of the loop body are: its type, or with a mask also
+# MaskedSnapshot.
+_snapshot_type(::EnzymeSchedule{S,A,ST,I,ArrayStorage{FT}}) where {S,A,ST,I,FT} = FT
+
+function _save_state!(sched::EnzymeSchedule, slot, step, box)
     storage, i = _state_storage(sched, slot, step, true)
     if _masked(sched)
-        objects, scalars = _leaves(sched, _loop_box(env))
-        snap = MaskedSnapshot(objects, Any[getfield(o, f) for (o, f) in scalars])
-        sched.snapshot_bytes += Base.summarysize(snap)
+        snap = _leaves!(sched, box)
+        _count_snapshot!(sched, snap)
         save!(storage, snap, i)
     else
-        body = _loop_body(env)
-        sched.snapshot_bytes += Base.summarysize(body)
+        body = box[]::_snapshot_type(sched)
+        _count_snapshot!(sched, body)
         save!(storage, body, i)
     end
+    return nothing
+end
+
+# Measuring a snapshot walks all of it, so only the first is.
+function _count_snapshot!(sched::EnzymeSchedule, snap)
+    sched.snapshots == 0 && (sched.snapshot_size = Base.summarysize(snap))
+    sched.snapshots += 1
     return nothing
 end
 
@@ -553,18 +700,49 @@ function _enzyme_load_state(
     step::Int64,
     env::Ptr{Cvoid},
 )::Cvoid
-    sched = _schedule(state)
+    ccall(
+        _callback(state, 5),
+        Cvoid,
+        (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid}),
+        state,
+        slot,
+        step,
+        env,
+    )
+    return nothing
+end
+
+_load_state_env!(sched::EnzymeSchedule, slot, step, env) =
+    _load_state!(sched, slot, step, _loop_box(env))
+
+# Defined after the callbacks it compiles.
+function _set_callbacks!(sched::S) where {S<:EnzymeSchedule}
+    for k = 1:5
+        fieldoffset(S, k) == (k - 1) * sizeof(Ptr{Cvoid}) || error("unreachable")
+    end
+    sched.next_action_cb = @cfunction(_next_action!, Cvoid, (Ref{S}, Ptr{Action}))
+    sched.store_cb =
+        @cfunction(_store!, Cvoid, (Ref{S}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64))
+    sched.restore_cb =
+        @cfunction(_restore!, Cvoid, (Ref{S}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64))
+    sched.save_state_cb =
+        @cfunction(_save_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
+    sched.load_state_cb =
+        @cfunction(_load_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
+    return sched
+end
+
+function _load_state!(sched::EnzymeSchedule, slot, step, box)
     storage, i = _state_storage(sched, slot, step, false)
     if _masked(sched)
-        objects, scalars = _leaves(sched, _loop_box(env))
+        live = _leaves!(sched, box)
         # Copies the stored objects into the live ones.
-        live = MaskedSnapshot(objects, Any[getfield(o, f) for (o, f) in scalars])
         load!(live, storage, i)
-        for ((o, f), v) in zip(scalars, live.scalars)
-            setfield!(o, f, v)
+        for (k, (o, f)) in enumerate(sched.owners)
+            setfield!(o, f, live.scalars[k])
         end
     else
-        load!(_loop_body(env), storage, i)
+        load!(box[]::_snapshot_type(sched), storage, i)
     end
     return nothing
 end
@@ -575,13 +753,16 @@ function _enzyme_set_nsteps(state::Ptr{Cvoid}, n::Int64)::Cvoid
 end
 
 function _enzyme_set_paths(state::Ptr{Cvoid}, paths::Ptr{Int64}, len::UInt64)::Cvoid
-    _schedule(state).paths = decode_paths(paths, len)
+    sched = _schedule(state)
+    sched.paths = decode_paths(paths, len)
+    sched.leaves = nothing
     return nothing
 end
 
 function _enzyme_finalize(state::Ptr{Cvoid})::Cvoid
-    LAST_SNAPSHOT_BYTES[] = _schedule(state).snapshot_bytes
-    delete!(LIVE_SCHEDULES, _schedule(state))
+    sched = _schedule(state)
+    LAST_SNAPSHOT_BYTES[] = sched.snapshot_size * sched.snapshots
+    delete!(LIVE_SCHEDULES, sched)
     return nothing
 end
 
@@ -684,17 +865,37 @@ mutable struct EnzymeLLVM{S<:Scheme}
     end
 end
 
+# The data pointer of one loop through EnzymeLLVM: its scheme, and the type of
+# its body, which snapshots are copies of.
+mutable struct EnzymeLLVMRun{B,E<:EnzymeLLVM}
+    alg::E
+end
+
+EnzymeLLVMRun(alg::E, body::B) where {B,E<:EnzymeLLVM} = EnzymeLLVMRun{B,E}(alg)
+
+function _schedule_for(run::EnzymeLLVMRun{B}, nsteps, bytes, state) where {B}
+    alg = run.alg
+    # Snapshots of the loop body keep its type, so that copying them is
+    # compiled for it; with a mask they may also be of what the step accesses.
+    FT = !state ? Vector{UInt8} : alg.snapshot === :all ? B : Union{B,MaskedSnapshot}
+    sched = enzyme_schedule(alg.scheme, nsteps, bytes, FT)
+    sched.snapshot = alg.snapshot
+    return sched
+end
+
 function checkpoint_while(body::Function, alg::EnzymeLLVM)
     scheme = enzyme_scheme(alg.scheme; state = true)[1]
-    data = pointer_from_objref(alg)
-    GC.@preserve alg EnzymeCore.checkpoint_while(scheme, data, body)
+    run = EnzymeLLVMRun(alg, body)
+    data = pointer_from_objref(run)
+    GC.@preserve run EnzymeCore.checkpoint_while(scheme, data, body)
     return nothing
 end
 
 function checkpoint_for(body::Function, alg::EnzymeLLVM, range::UnitRange{Int})
     scheme = enzyme_scheme(alg.scheme; state = true)[1]
-    data = pointer_from_objref(alg)
-    GC.@preserve alg EnzymeCore.checkpoint_for(
+    run = EnzymeLLVMRun(alg, body)
+    data = pointer_from_objref(run)
+    GC.@preserve run EnzymeCore.checkpoint_for(
         scheme,
         data,
         first(range),
