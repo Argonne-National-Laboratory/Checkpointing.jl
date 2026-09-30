@@ -39,6 +39,7 @@ struct EnzymeCheckpointScheme
     finalize::Ptr{Cvoid}
     save_state::Ptr{Cvoid}
     load_state::Ptr{Cvoid}
+    set_paths::Ptr{Cvoid}
 end
 
 const ENZYME_CKPT_ABI_VERSION = UInt32(1)
@@ -109,6 +110,120 @@ function next_action!(p::PeriodicActions)::Action
 end
 
 """
+    AccessPath
+
+An access of a checkpointed step, from Enzyme's `set_paths`: the byte offsets of
+the pointer fields followed from the loop body, the byte offset of the access in
+the object reached (`-1` for the whole object), and whether it reads or writes.
+"""
+struct AccessPath
+    path::Vector{Int}
+    offset::Int
+    read::Bool
+    write::Bool
+end
+
+function decode_paths(paths::Ptr{Int64}, len::Integer)
+    out = AccessPath[]
+    k = 1
+    while k <= len
+        n = unsafe_load(paths, k)
+        path = [Int(unsafe_load(paths, k + j)) for j = 1:n]
+        offset = Int(unsafe_load(paths, k + n + 1))
+        flags = unsafe_load(paths, k + n + 2)
+        push!(out, AccessPath(path, offset, flags & 1 != 0, flags & 2 != 0))
+        k += n + 3
+    end
+    return out
+end
+
+_inline(T) = Base.allocatedinline(T)
+
+# The field of `T` at byte `offset`, looking into fields stored inline: its
+# field path from `T`, its type, and the offset left over inside it.
+function _field_at(T::DataType, offset::Int)
+    isstructtype(T) || return nothing
+    for i = 1:fieldcount(T)
+        fo = Int(fieldoffset(T, i))
+        ft = fieldtype(T, i)
+        size = _inline(ft) ? sizeof(ft) : sizeof(Ptr{Cvoid})
+        fo <= offset < fo + max(size, 1) || continue
+        if _inline(ft) && ft isa DataType && isstructtype(ft) && fieldcount(ft) > 0
+            inner = _field_at(ft, offset - fo)
+            inner === nothing && return ((i,), ft, offset - fo)
+            return ((i, inner[1]...), inner[2], inner[3])
+        end
+        return ((i,), ft, offset - fo)
+    end
+    return nothing
+end
+
+_getfields(obj, fields) = foldl(getfield, fields; init = obj)
+
+# The object the pointer field at byte `offset` of `obj` points to, or nothing
+# if that is not a Julia object reference (an array's data, say).
+function _deref(obj, offset::Int)
+    obj isa AbstractArray && return nothing
+    field = _field_at(typeof(obj), offset)
+    field === nothing && return nothing
+    fields, ft, rest = field
+    (rest == 0 && !_inline(ft)) || return nothing
+    return _getfields(obj, fields)
+end
+
+"""
+    MaskedSnapshot
+
+What a snapshot of the loop body holds when Enzyme said what the step accesses:
+the objects it writes (or reads) as a whole -- typically arrays -- and the
+scalar fields of mutable objects.
+"""
+mutable struct MaskedSnapshot
+    objects::Vector{Any}
+    scalars::Vector{Any}
+end
+
+# The pieces of the loop body in `box` that a snapshot holds: whole objects, and
+# (object, field) pairs of mutable objects.
+function _leaves(sched, box)
+    objects = Any[]
+    scalars = Tuple{Any,Int}[]
+    seen = IdDict{Any,Nothing}()
+    for access in sched.paths
+        keep = access.write || (sched.snapshot === :accessed && access.read)
+        # The box itself only ever holds the body.
+        (keep && !isempty(access.path)) || continue
+        obj = box
+        whole = access.offset < 0
+        for offset in access.path
+            next = _deref(obj, offset)
+            if next === nothing
+                whole = true
+                break
+            end
+            obj = next
+        end
+        if whole || obj isa AbstractArray
+            if !haskey(seen, obj)
+                seen[obj] = nothing
+                push!(objects, obj)
+            end
+            continue
+        end
+        field = _field_at(typeof(obj), access.offset)
+        if field === nothing || !ismutable(obj)
+            haskey(seen, obj) || (seen[obj] = nothing; push!(objects, obj))
+            continue
+        end
+        i = field[1][1]
+        # A field holding references only matters through what they point to.
+        isbitstype(fieldtype(typeof(obj), i)) || continue
+        (obj, i) in scalars || push!(scalars, (obj, i))
+    end
+    return objects, scalars
+end
+
+"""
     EnzymeSchedule
 
 One run of a scheme through the C interface, from `init` to `finalize`.
@@ -127,7 +242,22 @@ mutable struct EnzymeSchedule{S,A}
     # back at its end, and -2, the state before the last step.
     entry::AbstractStorage
     entry_regions::ArrayStorage{Vector{UInt8}}
+    # What the step accesses through the loop body (from Enzyme's set_paths),
+    # and which of it a snapshot holds: nothing = the whole body.
+    paths::Union{Nothing,Vector{AccessPath}}
+    snapshot::Symbol
+    # Bytes copied into snapshots, for LAST_SNAPSHOT_BYTES.
+    snapshot_bytes::Int
 end
+
+"""
+    LAST_SNAPSHOT_BYTES[]
+
+The bytes the last schedule run through Enzyme copied into snapshots of the loop
+body, summed over all of them. For inspecting what `EnzymeLLVM`'s `snapshot`
+option saves.
+"""
+const LAST_SNAPSHOT_BYTES = Ref(0)
 
 # A schedule lives from `init` to `finalize`, across calls from C; this roots it.
 const LIVE_SCHEDULES = IdDict{EnzymeSchedule,Nothing}()
@@ -154,7 +284,15 @@ end
 _slots(scheme::Revolve) = scheme.acp
 _slots(scheme::Periodic) = scheme.acp + (scheme.steps == 0 ? 0 : scheme.period)
 
-function _new_schedule(scheme, actions, inner, segments, bytes, state::Bool)
+function _new_schedule(
+    scheme,
+    actions,
+    inner,
+    segments,
+    bytes,
+    state::Bool,
+    snapshot::Symbol = :all,
+)
     regions = state ? ArrayStorage{Vector{UInt8}}(max(_slots(scheme), 1)) : nothing
     entry = ArrayStorage{state ? Any : Vector{UInt8}}(2)
     return EnzymeSchedule(
@@ -166,6 +304,9 @@ function _new_schedule(scheme, actions, inner, segments, bytes, state::Bool)
         regions,
         entry,
         ArrayStorage{Vector{UInt8}}(2),
+        nothing,
+        snapshot,
+        0,
     )
 end
 
@@ -225,10 +366,17 @@ end
 _schedule(state::Ptr{Cvoid}) = unsafe_pointer_to_objref(state)::EnzymeSchedule
 
 function _enzyme_init(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64, state::Bool)
-    alg = unsafe_pointer_to_objref(data)::Scheme
+    alg = unsafe_pointer_to_objref(data)
+    snapshot = :all
+    if alg isa EnzymeLLVM
+        snapshot = alg.snapshot
+        alg = alg.scheme
+    end
+    alg::Scheme
     nsteps < 0 &&
         error("Checkpointing.jl: while loops are not supported through Enzyme yet")
     sched = enzyme_schedule(alg, Int(nsteps), Int(bytes), state)
+    sched.snapshot = snapshot
     LIVE_SCHEDULES[sched] = nothing
     return pointer_from_objref(sched)
 end
@@ -274,6 +422,10 @@ end
 # step's environment.
 _loop_body(env::Ptr{Cvoid}) = unsafe_pointer_to_objref(unsafe_load(Ptr{Ptr{Cvoid}}(env)))[]
 
+_loop_box(env::Ptr{Cvoid}) = unsafe_pointer_to_objref(unsafe_load(Ptr{Ptr{Cvoid}}(env)))
+
+_masked(sched) = sched.paths !== nothing && sched.snapshot !== :all
+
 function _enzyme_save_state(
     state::Ptr{Cvoid},
     slot::Int64,
@@ -282,7 +434,16 @@ function _enzyme_save_state(
 )::Cvoid
     sched = _schedule(state)
     storage, i = _state_storage(sched, slot)
-    save!(storage, _loop_body(env), i)
+    if _masked(sched)
+        objects, scalars = _leaves(sched, _loop_box(env))
+        snap = MaskedSnapshot(objects, Any[getfield(o, f) for (o, f) in scalars])
+        sched.snapshot_bytes += Base.summarysize(snap)
+        save!(storage, snap, i)
+    else
+        body = _loop_body(env)
+        sched.snapshot_bytes += Base.summarysize(body)
+        save!(storage, body, i)
+    end
     return nothing
 end
 
@@ -294,11 +455,27 @@ function _enzyme_load_state(
 )::Cvoid
     sched = _schedule(state)
     storage, i = _state_storage(sched, slot)
-    load!(_loop_body(env), storage, i)
+    if _masked(sched)
+        objects, scalars = _leaves(sched, _loop_box(env))
+        # Copies the stored objects into the live ones.
+        live = MaskedSnapshot(objects, Any[getfield(o, f) for (o, f) in scalars])
+        load!(live, storage, i)
+        for ((o, f), v) in zip(scalars, live.scalars)
+            setfield!(o, f, v)
+        end
+    else
+        load!(_loop_body(env), storage, i)
+    end
+    return nothing
+end
+
+function _enzyme_set_paths(state::Ptr{Cvoid}, paths::Ptr{Int64}, len::UInt64)::Cvoid
+    _schedule(state).paths = decode_paths(paths, len)
     return nothing
 end
 
 function _enzyme_finalize(state::Ptr{Cvoid})::Cvoid
+    LAST_SNAPSHOT_BYTES[] = _schedule(state).snapshot_bytes
     delete!(LIVE_SCHEDULES, _schedule(state))
     return nothing
 end
@@ -329,6 +506,7 @@ function _init_enzyme_abi()
         finalize,
         C_NULL,
         C_NULL,
+        C_NULL,
     )
     ENZYME_VTABLE_STATE[] = EnzymeCheckpointScheme(
         ENZYME_CKPT_ABI_VERSION,
@@ -340,6 +518,7 @@ function _init_enzyme_abi()
         finalize,
         @cfunction(_enzyme_save_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
         @cfunction(_enzyme_load_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
+        @cfunction(_enzyme_set_paths, Cvoid, (Ptr{Cvoid}, Ptr{Int64}, UInt64)),
     )
     return nothing
 end
@@ -367,7 +546,7 @@ function enzyme_scheme(alg::Scheme; state::Bool = false)
 end
 
 """
-    EnzymeLLVM(alg::Scheme)
+    EnzymeLLVM(alg::Scheme; snapshot = :accessed)
 
 `alg`, applied by Enzyme's LLVM core rather than by this package's EnzymeRules:
 
@@ -376,15 +555,32 @@ end
     end
 
 Enzyme differentiates each iteration once, at compile time, and runs the
-schedule of `alg` itself; snapshots are copies of the loop body, stored in the
-storage of `alg`. Only for loops are supported.
+schedule of `alg` itself; snapshots are kept in the storage of `alg`. Only for
+loops are supported.
+
+Enzyme tells the scheme what the loop body accesses, and `snapshot` says which
+of it a snapshot holds:
+
+- `:accessed`: what an iteration reads or writes, down to arrays and the scalar
+  fields of mutable structs. State the loop never touches is not copied.
+- `:written`: only what an iteration writes. Read-only state (parameters) is
+  not copied either, which is only correct if nothing changes it between the
+  loop and the end of the reverse pass.
+- `:all`: the whole loop body, as the EnzymeRules path does.
 """
-struct EnzymeLLVM{S<:Scheme}
+mutable struct EnzymeLLVM{S<:Scheme}
     scheme::S
+    snapshot::Symbol
+    function EnzymeLLVM(scheme::S; snapshot::Symbol = :accessed) where {S<:Scheme}
+        snapshot in (:accessed, :written, :all) ||
+            throw(ArgumentError("snapshot must be :accessed, :written or :all"))
+        return new{S}(scheme, snapshot)
+    end
 end
 
 function checkpoint_for(body::Function, alg::EnzymeLLVM, range::UnitRange{Int})
-    scheme, data = enzyme_scheme(alg.scheme; state = true)
+    scheme = enzyme_scheme(alg.scheme; state = true)[1]
+    data = pointer_from_objref(alg)
     GC.@preserve alg EnzymeCore.checkpoint_for(
         scheme,
         data,

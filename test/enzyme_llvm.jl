@@ -126,6 +126,69 @@ else
         @test got[3] == want[3]
     end
 
+    # What a snapshot holds: Enzyme says what an iteration accesses.
+    mutable struct Heat
+        T::Vector{Float64}
+        Tnext::Vector{Float64}
+        κ::Vector{Float64}      # only read
+        diag::Vector{Float64}   # not touched by the loop
+        t::Float64
+    end
+
+    function heat_step!(h::Heat)
+        T, Tn, κ = h.T, h.Tnext, h.κ
+        @inbounds for k = 2:(length(T)-1)
+            Tn[k] = T[k] + κ[k] * (T[k+1] - 2T[k] + T[k-1]) + 0.01 * sin(T[k] * h.t)
+        end
+        @inbounds for k = 2:(length(T)-1)
+            T[k] = Tn[k]
+        end
+        h.t += 0.1
+        return nothing
+    end
+
+    function heat(h::Heat, n, alg)
+        @ad_checkpoint alg for i = 1:n
+            heat_step!(h)
+        end
+        return sum(abs2, h.T) + sum(h.diag) * h.t
+    end
+
+    function heat_plain(h::Heat, n)
+        for i = 1:n
+            heat_step!(h)
+        end
+        return sum(abs2, h.T) + sum(h.diag) * h.t
+    end
+
+    function heat_gradient(f, args...)
+        N = 100
+        h = Heat([sin(k / 10) for k = 1:N], zeros(N), fill(0.2, N), ones(10N), 0.5)
+        dh = Heat(zeros(N), zeros(N), zeros(N), zeros(10N), 0.0)
+        autodiff(Reverse, f, Active, Duplicated(h, dh), args...)
+        return dh, h
+    end
+
+    @testset "Snapshots of what an iteration accesses" begin
+        want, want_h = heat_gradient(heat_plain, Const(30))
+        bytes = Dict{Symbol,Int}()
+        for snapshot in (:all, :accessed, :written)
+            got, h = heat_gradient(
+                heat,
+                Const(30),
+                Const(EnzymeLLVM(Revolve(4); snapshot = snapshot)),
+            )
+            @test got.T ≈ want.T
+            @test got.κ ≈ want.κ
+            @test got.diag ≈ want.diag
+            @test got.t ≈ want.t
+            @test h.T == want_h.T && h.t == want_h.t
+            bytes[snapshot] = Checkpointing.LAST_SNAPSHOT_BYTES[]
+        end
+        # diag is not copied, and with :written neither is κ.
+        @test bytes[:all] > bytes[:accessed] > bytes[:written]
+    end
+
     @test isempty(Checkpointing.LIVE_SCHEDULES)
 end
 
