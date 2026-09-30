@@ -26,17 +26,12 @@ function fwd_checkpoint_while(body::Function, alg::MyScheme) end
 ```
 The reverse half runs in the reverse pass. It restores checkpoints, recomputes iterations, and differentiates them one at a time, accumulating the adjoint in the shadow closure `dbody`:
 ```julia
-function rev_checkpoint_for(config, tape, dbody::Function, alg::MyScheme, range) end
-function rev_checkpoint_while(config, tape, dbody::Function, alg::MyScheme) end
+function rev_checkpoint_for(config, tape, dbody, alg::MyScheme, range) end
+function rev_checkpoint_while(config, tape, dbody, alg::MyScheme) end
 ```
-The reverse half is called with the Enzyme config `config`, the `tape` returned by the forward half, the shadow closure `dbody`, the scheme `alg`, and the loop range `range` (for `for` loops).
+The reverse half is called with the Enzyme config `config`, the `tape` returned by the forward half, the shadow closure `dbody`, the scheme `alg`, and the loop range `range` (for `for` loops). In Enzyme's vector mode (`BatchDuplicated`), `dbody` is a tuple with one shadow closure per lane; the schedule and the checkpoints only involve the primal `body`, so they serve all lanes at once.
 
-These four functions are unexported, so a new scheme extends `Checkpointing.fwd_checkpoint_for` and its siblings. A `for` loop body is called as `body(i)` with the current element of `range`. A `while` loop body is called as `body()` and returns the loop condition. Checkpoints are written with `Checkpointing.save!(alg.storage, body, i)` and read back with `Checkpointing.load!(body, alg.storage, i)`; see [Storage](storage.md). A single iteration `i` of a `for` loop is differentiated as below; for a `while` loop, drop the `Const(i)` argument.
+These four functions are unexported, so a new scheme extends `Checkpointing.fwd_checkpoint_for` and its siblings. A `for` loop body is called as `body(i)` with the current element of `range`. A `while` loop body is called as `body()` and returns the loop condition. Checkpoints are written with `Checkpointing.save!(alg.storage, body, i)` and read back with `Checkpointing.load!(body, alg.storage, i)`; see [Storage](storage.md). A single iteration `i` of a `for` loop is differentiated as below, for a single shadow or for all lanes at once; for a `while` loop, drop the `Const(i)` argument.
 ```julia
-Enzyme.autodiff(
-    EnzymeCore.set_runtime_activity(Reverse, config),
-    Duplicated(body, dbody),
-    Const,
-    Const(i),
-)
+Checkpointing.adjoint_step!(config, body, dbody, Const(i))
 ```

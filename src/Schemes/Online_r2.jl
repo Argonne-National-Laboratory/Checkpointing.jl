@@ -540,7 +540,7 @@ end
 The reverse half: plans an offline Revolve schedule over the iterations the
 primal counted, and runs it from the checkpoints the online phase stored.
 """
-function rev_checkpoint_while(config, tape, dbody::Function, alg::Online_r2)
+function rev_checkpoint_while(config, tape, dbody, alg::Online_r2)
     body, storemapinv, onlinesteps = tape
     model_check = alg.storage
     # Slots the online phase never stored into are free for the offline phase;
@@ -568,11 +568,7 @@ function rev_checkpoint_while(config, tape, dbody::Function, alg::Online_r2)
             # so the first uturn has no adjoint to take -- it only consumes
             # that extra iteration.
         elseif (next_action.actionflag == Checkpointing.uturn)
-            Enzyme.autodiff(
-                EnzymeCore.set_runtime_activity(Reverse, config),
-                Duplicated(body, dbody),
-                Const,
-            )
+            adjoint_step!(config, body, dbody)
             if haskey(storemap, next_action.iteration - 1 - 1)
                 push!(freeindices, storemap[next_action.iteration-1-1])
                 delete!(storemap, next_action.iteration - 1 - 1)
