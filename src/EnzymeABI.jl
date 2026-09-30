@@ -63,16 +63,23 @@ end
 
 _segstart(p::PeriodicActions, k) = div(k * p.steps, p.segments)
 
+# The slot of the state before step j of segment k: the segment's own slot k
+# for its first step, then slots K on, shared by all segments.
+_segslot(p::PeriodicActions, k, j) =
+    j == _segstart(p, k) ? k : p.segments + (j - _segstart(p, k) - 1)
+
+# Every segment but the last already has its start in slot k, from the forward
+# sweep.
 function _queue_segment!(p::PeriodicActions, k, first::Bool)
-    s, e, K = _segstart(p, k), _segstart(p, k + 1), p.segments
+    s, e = _segstart(p, k), _segstart(p, k + 1)
     for j = s:(e-2)
-        push!(p.queue, Action(store, j, j, K + (j - s)))
-        push!(p.queue, Action(forward, j + 1, j, K + (j - s)))
+        (j != s || first) && push!(p.queue, Action(store, j, j, _segslot(p, k, j)))
+        push!(p.queue, Action(forward, j + 1, j, _segslot(p, k, j)))
     end
-    push!(p.queue, Action(first ? firstuturn : uturn, e, e - 1, K + (e - 1 - s)))
+    push!(p.queue, Action(first ? firstuturn : uturn, e, e - 1, _segslot(p, k, e - 1)))
     for j = (e-2):-1:s
-        push!(p.queue, Action(restore, j, j, K + (j - s)))
-        push!(p.queue, Action(uturn, j + 1, j, K + (j - s)))
+        push!(p.queue, Action(restore, j, j, _segslot(p, k, j)))
+        push!(p.queue, Action(uturn, j + 1, j, _segslot(p, k, j)))
     end
     return p
 end
