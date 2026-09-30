@@ -334,6 +334,25 @@ else
         @test bytes[:accessed] == bytes[:all]
     end
 
+    # Vector mode: the adjoints of a batch share one schedule and its snapshots.
+    @testset "BatchDuplicated, $(nameof(typeof(alg)))" for alg in (Revolve(4), Periodic(3))
+        want, want_r = rod_gradient(rod_plain, Const(30))
+        N = length(want.T)
+        r = Rod([sin(k / 10) for k = 1:N], zeros(N))
+        dr = (Rod(zeros(N), zeros(N)), Rod(zeros(N), zeros(N)))
+        autodiff(
+            Reverse,
+            rod,
+            Active,
+            BatchDuplicated(r, dr),
+            Const(30),
+            Const(EnzymeLLVM(alg)),
+        )
+        @test dr[1].T ≈ want.T
+        @test dr[2].T ≈ want.T
+        @test r.T == want_r.T
+    end
+
     @test isempty(Checkpointing.LIVE_SCHEDULES)
 end
 
