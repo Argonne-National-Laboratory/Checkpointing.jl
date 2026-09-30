@@ -135,13 +135,7 @@ function fwd_checkpoint_for(body::Function, alg::Periodic, range)
     return (checkpoint_alloc(body),)
 end
 
-function rev_checkpoint_for(
-    config,
-    tape,
-    dbody::Function,
-    alg::Periodic{FT},
-    range,
-) where {FT}
+function rev_checkpoint_for(config, tape, dbody, alg::Periodic{FT}, range) where {FT}
     tape === nothing && return nothing
     (body,) = tape
     model_check_outer = alg.storage
@@ -160,12 +154,7 @@ function rev_checkpoint_for(
             j = seg[n]
             load!(body, model_check_inner, n)
             dump_prim(alg.chkp_dump, j, body)
-            Enzyme.autodiff(
-                EnzymeCore.set_runtime_activity(Reverse, config),
-                Duplicated(body, dbody),
-                Const,
-                Const(range[j]),
-            )
+            adjoint_step!(config, body, dbody, Const(range[j]))
             dump_adj(alg.chkp_dump, j, dbody)
         end
     end

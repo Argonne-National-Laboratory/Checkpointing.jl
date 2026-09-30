@@ -85,6 +85,7 @@ using HDF5
         include("multilevel.jl")
     end
     include("correctness.jl")
+    include("batch.jl")
     include("burgers.jl")
     @testset "Test writing checkpoints out" begin
         include("output_chkp.jl")

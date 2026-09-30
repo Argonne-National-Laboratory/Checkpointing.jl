@@ -489,7 +489,7 @@ end
 The reverse half of the Revolve schedule, resuming at the first u-turn from the
 tape [`fwd_checkpoint_for`](@ref) left behind.
 """
-function rev_checkpoint_for(config, tape, dbody::Function, alg::Revolve, range)
+function rev_checkpoint_for(config, tape, dbody, alg::Revolve, range)
     tape === nothing && return nothing
     body, storemap, check = tape
     if alg.verbose > 0
@@ -501,12 +501,7 @@ function rev_checkpoint_for(config, tape, dbody::Function, alg::Revolve, range)
     step = alg.steps
     # The first u-turn: `body` holds the state from just before the last step.
     dump_prim(alg.chkp_dump, step, body)
-    Enzyme.autodiff(
-        EnzymeCore.set_runtime_activity(Reverse, config),
-        Duplicated(body, dbody),
-        Const,
-        Const(range[step]),
-    )
+    adjoint_step!(config, body, dbody, Const(range[step]))
     dump_adj(alg.chkp_dump, step, dbody)
     step -= 1
     while true
@@ -521,12 +516,7 @@ function rev_checkpoint_for(config, tape, dbody::Function, alg::Revolve, range)
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
             dump_prim(alg.chkp_dump, step, body)
-            Enzyme.autodiff(
-                EnzymeCore.set_runtime_activity(Reverse, config),
-                Duplicated(body, dbody),
-                Const,
-                Const(range[step]),
-            )
+            adjoint_step!(config, body, dbody, Const(range[step]))
             dump_adj(alg.chkp_dump, step, dbody)
             step -= 1
             if haskey(storemap, next_action.iteration - 1 - 1)
