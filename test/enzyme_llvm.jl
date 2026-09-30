@@ -279,6 +279,61 @@ else
         @test bytes[:all] > bytes[:accessed] > bytes[:written]
     end
 
+    # A step that accesses all of the body: masking would save nothing.
+    mutable struct Rod
+        T::Vector{Float64}
+        Tnext::Vector{Float64}
+    end
+
+    function rod_step!(r::Rod)
+        T, Tn = r.T, r.Tnext
+        @inbounds for k = 2:(length(T)-1)
+            Tn[k] = T[k] + 0.25 * (T[k+1] - 2T[k] + T[k-1])
+        end
+        @inbounds for k = 2:(length(T)-1)
+            T[k] = Tn[k]
+        end
+        return nothing
+    end
+
+    function rod(r::Rod, n, alg)
+        @ad_checkpoint alg for i = 1:n
+            rod_step!(r)
+        end
+        return sum(abs2, r.T)
+    end
+
+    function rod_plain(r::Rod, n)
+        for i = 1:n
+            rod_step!(r)
+        end
+        return sum(abs2, r.T)
+    end
+
+    function rod_gradient(f, args...)
+        N = 100
+        r = Rod([sin(k / 10) for k = 1:N], zeros(N))
+        dr = Rod(zeros(N), zeros(N))
+        autodiff(Reverse, f, Active, Duplicated(r, dr), args...)
+        return dr, r
+    end
+
+    @testset "Snapshots of the whole body when a mask saves nothing" begin
+        want, want_r = rod_gradient(rod_plain, Const(30))
+        bytes = Dict{Symbol,Int}()
+        for snapshot in (:all, :accessed)
+            got, r = rod_gradient(
+                rod,
+                Const(30),
+                Const(EnzymeLLVM(Revolve(4); snapshot = snapshot)),
+            )
+            @test got.T ≈ want.T
+            @test r.T == want_r.T
+            bytes[snapshot] = Checkpointing.LAST_SNAPSHOT_BYTES[]
+        end
+        @test bytes[:accessed] == bytes[:all]
+    end
+
     @test isempty(Checkpointing.LIVE_SCHEDULES)
 end
 

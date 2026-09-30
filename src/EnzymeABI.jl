@@ -646,7 +646,28 @@ _loop_body(env::Ptr{Cvoid}) = unsafe_pointer_to_objref(unsafe_load(Ptr{Ptr{Cvoid
 
 _loop_box(env::Ptr{Cvoid}) = unsafe_pointer_to_objref(unsafe_load(Ptr{Ptr{Cvoid}}(env)))
 
-_masked(sched) = sched.paths !== nothing && sched.snapshot !== :all
+# A mask has to save at least this fraction of a snapshot of the whole loop
+# body to be used: following it costs more per snapshot than copying the body,
+# so a mask that saves (next to) nothing only makes snapshots slower.
+const MASK_MIN_SAVING = 0.05
+
+# Whether snapshots hold only what the step accesses. Decided at the first
+# snapshot, before any is taken, and kept for the schedule: without the paths,
+# with `snapshot = :all`, or if the mask saves too little, snapshots are of the
+# whole body.
+function _masked!(sched, box)
+    (sched.paths === nothing || sched.snapshot === :all) && return false
+    sched.leaves === nothing || return true
+    leaves = _plan_leaves(sched, box)
+    _fill_leaves!(sched, leaves, box)
+    whole = Base.summarysize(box[])
+    if Base.summarysize(sched.live) > (1 - MASK_MIN_SAVING) * whole
+        sched.paths = nothing
+        return false
+    end
+    sched.leaves = leaves
+    return true
+end
 
 function _enzyme_save_state(
     state::Ptr{Cvoid},
@@ -675,7 +696,7 @@ _snapshot_type(::EnzymeSchedule{S,A,ST,I,ArrayStorage{FT}}) where {S,A,ST,I,FT} 
 
 function _save_state!(sched::EnzymeSchedule, slot, step, box)
     storage, i = _state_storage(sched, slot, step, true)
-    if _masked(sched)
+    if _masked!(sched, box)
         snap = _leaves!(sched, box)
         _count_snapshot!(sched, snap)
         save!(storage, snap, i)
@@ -734,7 +755,7 @@ end
 
 function _load_state!(sched::EnzymeSchedule, slot, step, box)
     storage, i = _state_storage(sched, slot, step, false)
-    if _masked(sched)
+    if _masked!(sched, box)
         live = _leaves!(sched, box)
         # Copies the stored objects into the live ones.
         load!(live, storage, i)
@@ -854,6 +875,10 @@ of it a snapshot holds:
   not copied either, which is only correct if nothing changes it between the
   loop and the end of the reverse pass.
 - `:all`: the whole loop body, as the EnzymeRules path does.
+
+With `:accessed` or `:written`, a snapshot is of the whole body after all if
+leaving out what the step does not need saves less than 5% of it: copying just
+those pieces costs more per snapshot than copying the body.
 """
 mutable struct EnzymeLLVM{S<:Scheme}
     scheme::S
