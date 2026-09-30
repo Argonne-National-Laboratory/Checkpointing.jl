@@ -126,6 +126,96 @@ else
         @test got[3] == want[3]
     end
 
+    mutable struct Counted
+        x::Vector{Float64}
+        n::Int
+    end
+
+    function checkpointed_while(s::Counted, alg, n::Int)
+        s.n = 0
+        @ad_checkpoint alg while s.n < n
+            s.x .= s.x .+ 0.01 .* s.x .^ 2
+            s.n += 1
+        end
+        return sum(s.x)
+    end
+
+    function plain_while_steps(s::Counted, n::Int)
+        for _ = 1:n
+            s.x .= s.x .+ 0.01 .* s.x .^ 2
+        end
+        return sum(s.x)
+    end
+
+    function while_gradient(f, args...)
+        x = Counted([0.5, 0.8], 0)
+        dx = Counted([0.0, 0.0], 0)
+        _, primal =
+            autodiff(Enzyme.ReverseWithPrimal, f, Active, Duplicated(x, dx), args...)
+        return primal, dx.x, x.x
+    end
+
+    @testset "EnzymeLLVM(Online_r2($c)) over $n iterations" for c = 1:5,
+        n in filter(<=(Checkpointing.online_r2_limit(c)), [1, 2, 3, 5, 10, 20, 30])
+
+        want = while_gradient(plain_while_steps, Const(n))
+        got = while_gradient(checkpointed_while, Const(EnzymeLLVM(Online_r2(c))), Const(n))
+        @test got[1] ≈ want[1]
+        @test got[2] ≈ want[2]
+        @test got[3] == want[3]
+    end
+
+    # Issue #65: a while loop that reassigns a captured scalar.
+    euler_rhs(t, y, B) = B * y
+    function euler(y0, t_i, t_f, A, dt = 0.2)
+        t = t_i + dt
+        y = copy(y0)
+        while t < t_f
+            y .+= euler_rhs(t, y, A) .* dt
+            t += dt
+            t = min(t, t_f)
+        end
+        sum(y)
+    end
+    function euler_checkpointed(y0, t_i, t_f, A, alg, dt = 0.2)
+        t = t_i + dt
+        y = copy(y0)
+        @ad_checkpoint alg while t < t_f
+            y .+= euler_rhs(t, y, A) .* dt
+            t += dt
+            t = min(t, t_f)
+        end
+        sum(y)
+    end
+
+    @testset "Euler steps with a reassigned time (#65), Online_r2($c)" for c in (2, 3)
+        y0 = [1.0 9.0; 1.0 9.0]
+        A = [0 1.0; -100.0 0]
+        dy0, dA = zero(y0), zero(A)
+        autodiff(
+            Reverse,
+            euler,
+            Active,
+            Duplicated(y0, dy0),
+            Const(0.0),
+            Const(2.0),
+            Duplicated(A, dA),
+        )
+        dy0_2, dA_2 = zero(y0), zero(A)
+        autodiff(
+            Reverse,
+            euler_checkpointed,
+            Active,
+            Duplicated(y0, dy0_2),
+            Const(0.0),
+            Const(2.0),
+            Duplicated(A, dA_2),
+            Const(EnzymeLLVM(Online_r2(c))),
+        )
+        @test dy0_2 ≈ dy0
+        @test dA_2 ≈ dA
+    end
+
     # What a snapshot holds: Enzyme says what an iteration accesses.
     mutable struct Heat
         T::Vector{Float64}

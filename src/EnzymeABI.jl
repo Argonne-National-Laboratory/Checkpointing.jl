@@ -263,26 +263,50 @@ const LAST_SNAPSHOT_BYTES = Ref(0)
 const LIVE_SCHEDULES = IdDict{EnzymeSchedule,Nothing}()
 
 _actions(scheme::Revolve) = scheme
-_slot_storage(s::EnzymeSchedule{<:Revolve}, slot) = (s.scheme.storage, slot + 1)
 
-function _slot_storage(s::EnzymeSchedule{<:Periodic}, slot)
+# The storage and index for the snapshot of the state before `step`, in
+# `slot`, to `store` or to restore.
+_slot_storage(s::EnzymeSchedule{<:Revolve}, slot, step, store) =
+    (s.scheme.storage, slot + 1)
+
+function _slot_storage(s::EnzymeSchedule{<:Periodic}, slot, step, store)
     slot < s.segments && return (s.scheme.storage, slot + 1)
     return (s.inner, slot - s.segments + 1)
 end
 
+# Online_r2 keeps its snapshots by step, as its own driver does: the offline
+# Revolve that takes over once the loop has ended numbers slots differently.
+function _slot_storage(s::EnzymeSchedule{<:Online_r2}, slot, step, store)
+    a = s.actions::OnlineActions
+    if store
+        if a.revolve === nothing
+            # The online phase overwrites its slot.
+            i = slot + 1
+            filter!(kv -> kv.second != i, a.storemap)
+        else
+            i = pop!(a.free)
+        end
+        a.storemap[step] = i
+    else
+        i = a.storemap[step]
+    end
+    return (s.scheme.storage, i)
+end
+
 # The storage and index for the state (loop body or regions) of `slot`.
-_state_storage(s::EnzymeSchedule, slot) =
-    slot < 0 ? (s.entry, -slot) : _slot_storage(s, slot)
+_state_storage(s::EnzymeSchedule, slot, step, store) =
+    slot < 0 ? (s.entry, -slot) : _slot_storage(s, slot, step, store)
 
 # The storage and index for the regions of `slot`.
-function _region_storage(s::EnzymeSchedule, slot)
-    s.regions === nothing && return _state_storage(s, slot)
+function _region_storage(s::EnzymeSchedule, slot, step, store)
+    s.regions === nothing && return _state_storage(s, slot, step, store)
     slot < 0 && return (s.entry_regions, -slot)
-    return (s.regions, slot + 1)
+    return (s.regions, _slot_storage(s, slot, step, store)[2])
 end
 
 _slots(scheme::Revolve) = scheme.acp
 _slots(scheme::Periodic) = scheme.acp + (scheme.steps == 0 ? 0 : scheme.period)
+_slots(scheme::Online_r2) = scheme.acp
 
 function _new_schedule(
     scheme,
@@ -312,12 +336,90 @@ end
 
 # With `state`, snapshots are of the loop body (whose type is not known here),
 # otherwise of the bytes of the regions.
+_for_loop(alg, steps) =
+    steps >= 0 || error(
+        "Checkpointing.jl: $(nameof(typeof(alg))) needs the number of iterations; use Online_r2 for a while loop",
+    )
+
+"""
+    OnlineActions
+
+The schedule of [`Online_r2`](@ref) as actions. While the loop runs they are
+the online scheme's; once it has ended, those of the offline Revolve that takes
+over, as in `rev_checkpoint_while`: that schedule is over one step more than the
+loop ran, which its first turn consumes, and its first turn of a real step is
+the forward sweep's last action. Snapshots are kept by step.
+"""
+mutable struct OnlineActions{S}
+    online::S
+    oldcapo::Int
+    revolve::Any
+    skipped::Bool
+    turned::Bool
+    # step => storage index, and the free indices once the loop has ended
+    storemap::Dict{Int,Int}
+    free::Vector{Int}
+end
+
+function next_action!(a::OnlineActions)::Action
+    if a.revolve === nothing
+        next = next_action!(a.online)
+        if next.actionflag == store
+            step = next.iteration + 1
+            return Action(store, step, step, next.cpnum)
+        elseif next.actionflag == forward
+            action = Action(forward, next.iteration, a.oldcapo, next.cpnum)
+            a.oldcapo = next.iteration
+            return action
+        end
+        error(
+            "[Checkpointing.jl]: Online_r2 with $(a.online.acp) checkpoints supports loops " *
+            "of at most $(online_r2_limit(a.online.acp)) iterations.",
+        )
+    end
+    next = next_action!(a.revolve)
+    flag = next.actionflag
+    if flag == firstuturn && !a.skipped
+        a.skipped = true
+        return next_action!(a)
+    elseif flag == uturn || flag == firstuturn
+        flag = a.turned ? uturn : firstuturn
+        a.turned = true
+        step = next.iteration - 1
+        if haskey(a.storemap, step)
+            push!(a.free, a.storemap[step])
+            delete!(a.storemap, step)
+        end
+        return Action(flag, next.iteration, step, next.cpnum)
+    elseif flag == store || flag == restore
+        return Action(flag, next.iteration, next.iteration, next.cpnum)
+    end
+    return next
+end
+
+function set_nsteps!(a::OnlineActions, steps::Int)
+    a.revolve = update_revolve(a.online, steps + 1)
+    held = Set(values(a.storemap))
+    a.free = [i for i = 1:a.online.acp if !(i in held)]
+    return a
+end
+set_nsteps!(a, steps::Int) = a
+
+function enzyme_schedule(alg::Online_r2{Nothing}, steps::Int, bytes::Int, state::Bool)
+    steps < 0 || error("Checkpointing.jl: Online_r2 schedules while loops")
+    scheme = instantiate(state ? Any : Vector{UInt8}, alg)
+    actions = OnlineActions(scheme, 0, nothing, false, false, Dict{Int,Int}(), Int[])
+    return _new_schedule(scheme, actions, nothing, 0, bytes, state)
+end
+
 function enzyme_schedule(alg::Revolve{Nothing}, steps::Int, bytes::Int, state::Bool)
+    _for_loop(alg, steps)
     scheme = instantiate(state ? Any : Vector{UInt8}, alg, steps)
     return _new_schedule(scheme, scheme, nothing, 0, bytes, state)
 end
 
 function enzyme_schedule(alg::Periodic{Nothing}, steps::Int, bytes::Int, state::Bool)
+    _for_loop(alg, steps)
     FT = state ? Any : Vector{UInt8}
     scheme = instantiate(FT, alg, steps)
     actions = PeriodicActions(steps, scheme.acp)
@@ -373,8 +475,6 @@ function _enzyme_init(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64, state::Boo
         alg = alg.scheme
     end
     alg::Scheme
-    nsteps < 0 &&
-        error("Checkpointing.jl: while loops are not supported through Enzyme yet")
     sched = enzyme_schedule(alg, Int(nsteps), Int(bytes), state)
     sched.snapshot = snapshot
     LIVE_SCHEDULES[sched] = nothing
@@ -399,7 +499,7 @@ function _enzyme_store(
     n::UInt64,
 )::Cvoid
     sched = _schedule(state)
-    storage, i = _region_storage(sched, slot)
+    storage, i = _region_storage(sched, slot, step, true)
     save!(storage, _pack!(sched.buffer, regions, n), i)
     return nothing
 end
@@ -412,7 +512,7 @@ function _enzyme_restore(
     n::UInt64,
 )::Cvoid
     sched = _schedule(state)
-    storage, i = _region_storage(sched, slot)
+    storage, i = _region_storage(sched, slot, step, false)
     load!(sched.buffer, storage, i)
     _unpack!(regions, n, sched.buffer)
     return nothing
@@ -433,7 +533,7 @@ function _enzyme_save_state(
     env::Ptr{Cvoid},
 )::Cvoid
     sched = _schedule(state)
-    storage, i = _state_storage(sched, slot)
+    storage, i = _state_storage(sched, slot, step, true)
     if _masked(sched)
         objects, scalars = _leaves(sched, _loop_box(env))
         snap = MaskedSnapshot(objects, Any[getfield(o, f) for (o, f) in scalars])
@@ -454,7 +554,7 @@ function _enzyme_load_state(
     env::Ptr{Cvoid},
 )::Cvoid
     sched = _schedule(state)
-    storage, i = _state_storage(sched, slot)
+    storage, i = _state_storage(sched, slot, step, false)
     if _masked(sched)
         objects, scalars = _leaves(sched, _loop_box(env))
         # Copies the stored objects into the live ones.
@@ -466,6 +566,11 @@ function _enzyme_load_state(
     else
         load!(_loop_body(env), storage, i)
     end
+    return nothing
+end
+
+function _enzyme_set_nsteps(state::Ptr{Cvoid}, n::Int64)::Cvoid
+    set_nsteps!(_schedule(state).actions, Int(n))
     return nothing
 end
 
@@ -496,13 +601,14 @@ function _init_enzyme_abi()
         (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
     )
     finalize = @cfunction(_enzyme_finalize, Cvoid, (Ptr{Cvoid},))
+    set_nsteps = @cfunction(_enzyme_set_nsteps, Cvoid, (Ptr{Cvoid}, Int64))
     ENZYME_VTABLE[] = EnzymeCheckpointScheme(
         ENZYME_CKPT_ABI_VERSION,
         @cfunction(_enzyme_init_regions, Ptr{Cvoid}, (Ptr{Cvoid}, Int64, UInt64)),
         next,
         store,
         restore,
-        C_NULL,
+        set_nsteps,
         finalize,
         C_NULL,
         C_NULL,
@@ -514,7 +620,7 @@ function _init_enzyme_abi()
         next,
         store,
         restore,
-        C_NULL,
+        set_nsteps,
         finalize,
         @cfunction(_enzyme_save_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
         @cfunction(_enzyme_load_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
@@ -555,8 +661,8 @@ end
     end
 
 Enzyme differentiates each iteration once, at compile time, and runs the
-schedule of `alg` itself; snapshots are kept in the storage of `alg`. Only for
-loops are supported.
+schedule of `alg` itself; snapshots are kept in the storage of `alg`. For loops
+take Revolve or Periodic, while loops Online_r2.
 
 Enzyme tells the scheme what the loop body accesses, and `snapshot` says which
 of it a snapshot holds:
@@ -576,6 +682,13 @@ mutable struct EnzymeLLVM{S<:Scheme}
             throw(ArgumentError("snapshot must be :accessed, :written or :all"))
         return new{S}(scheme, snapshot)
     end
+end
+
+function checkpoint_while(body::Function, alg::EnzymeLLVM)
+    scheme = enzyme_scheme(alg.scheme; state = true)[1]
+    data = pointer_from_objref(alg)
+    GC.@preserve alg EnzymeCore.checkpoint_while(scheme, data, body)
+    return nothing
 end
 
 function checkpoint_for(body::Function, alg::EnzymeLLVM, range::UnitRange{Int})
