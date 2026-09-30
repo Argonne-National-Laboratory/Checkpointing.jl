@@ -1,6 +1,7 @@
 module Checkpointing
 
 using Serialization
+import EnzymeCore
 
 """
     Scheme
@@ -57,6 +58,7 @@ export instantiate
 export reset!
 export AbstractStorage, ArrayStorage, HDF5Storage
 export Revolve, Periodic, Online_r2
+export enzyme_scheme, EnzymeLLVM
 
 function serialize(x)
     s = IOBuffer()
@@ -117,6 +119,11 @@ function checkpoint_while(body::Function, scheme::Scheme)
 end
 
 include("Rules/EnzymeRules.jl")
+include("EnzymeABI.jl")
+
+function __init__()
+    _init_enzyme_abi()
+end
 
 """
     @ad_checkpoint(
