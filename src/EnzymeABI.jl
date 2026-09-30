@@ -120,6 +120,12 @@ mutable struct EnzymeSchedule{S,A}
     # Periodic: the storage for the steps of the segment being reversed.
     inner::Union{Nothing,AbstractStorage}
     segments::Int
+    # With `save_state`, the scheme's storage holds the loop body and the
+    # regions go here; without, the scheme's storage holds the regions.
+    regions::Union{Nothing,ArrayStorage{Vector{UInt8}}}
+    # Slot -1: the state the reverse sweep starts from, put back at its end.
+    entry::AbstractStorage
+    entry_regions::ArrayStorage{Vector{UInt8}}
 end
 
 # A schedule lives from `init` to `finalize`, across calls from C; this roots it.
@@ -133,20 +139,51 @@ function _slot_storage(s::EnzymeSchedule{<:Periodic}, slot)
     return (s.inner, slot - s.segments + 1)
 end
 
-function enzyme_schedule(alg::Revolve{Nothing}, steps::Int, bytes::Int)
-    scheme = instantiate(Vector{UInt8}, alg, steps)
-    return EnzymeSchedule(scheme, _actions(scheme), zeros(UInt8, bytes), nothing, 0)
+# The storage and index for the state (loop body or regions) of `slot`.
+_state_storage(s::EnzymeSchedule, slot) = slot == -1 ? (s.entry, 1) : _slot_storage(s, slot)
+
+# The storage and index for the regions of `slot`.
+function _region_storage(s::EnzymeSchedule, slot)
+    s.regions === nothing && return _state_storage(s, slot)
+    slot == -1 && return (s.entry_regions, 1)
+    return (s.regions, slot + 1)
 end
 
-function enzyme_schedule(alg::Periodic{Nothing}, steps::Int, bytes::Int)
-    scheme = instantiate(Vector{UInt8}, alg, steps)
+_slots(scheme::Revolve) = scheme.acp
+_slots(scheme::Periodic) = scheme.acp + (scheme.steps == 0 ? 0 : scheme.period)
+
+function _new_schedule(scheme, actions, inner, segments, bytes, state::Bool)
+    regions = state ? ArrayStorage{Vector{UInt8}}(max(_slots(scheme), 1)) : nothing
+    entry = ArrayStorage{state ? Any : Vector{UInt8}}(1)
+    return EnzymeSchedule(
+        scheme,
+        actions,
+        zeros(UInt8, bytes),
+        inner,
+        segments,
+        regions,
+        entry,
+        ArrayStorage{Vector{UInt8}}(1),
+    )
+end
+
+# With `state`, snapshots are of the loop body (whose type is not known here),
+# otherwise of the bytes of the regions.
+function enzyme_schedule(alg::Revolve{Nothing}, steps::Int, bytes::Int, state::Bool)
+    scheme = instantiate(state ? Any : Vector{UInt8}, alg, steps)
+    return _new_schedule(scheme, scheme, nothing, 0, bytes, state)
+end
+
+function enzyme_schedule(alg::Periodic{Nothing}, steps::Int, bytes::Int, state::Bool)
+    FT = state ? Any : Vector{UInt8}
+    scheme = instantiate(FT, alg, steps)
     actions = PeriodicActions(steps, scheme.acp)
     period = steps == 0 ? 0 : cld(steps, actions.segments)
-    inner = ArrayStorage{Vector{UInt8}}(max(period, 1))
-    return EnzymeSchedule(scheme, actions, zeros(UInt8, bytes), inner, actions.segments)
+    inner = ArrayStorage{FT}(max(period, 1))
+    return _new_schedule(scheme, actions, inner, actions.segments, bytes, state)
 end
 
-function enzyme_schedule(alg::Scheme, steps::Int, bytes::Int)
+function enzyme_schedule(alg::Scheme, steps::Int, bytes::Int, state::Bool)
     error(
         "Checkpointing.jl: $(typeof(alg)) cannot schedule a checkpointed for loop through Enzyme",
     )
@@ -185,14 +222,19 @@ end
 
 _schedule(state::Ptr{Cvoid}) = unsafe_pointer_to_objref(state)::EnzymeSchedule
 
-function _enzyme_init(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid}
+function _enzyme_init(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64, state::Bool)
     alg = unsafe_pointer_to_objref(data)::Scheme
     nsteps < 0 &&
         error("Checkpointing.jl: while loops are not supported through Enzyme yet")
-    sched = enzyme_schedule(alg, Int(nsteps), Int(bytes))
+    sched = enzyme_schedule(alg, Int(nsteps), Int(bytes), state)
     LIVE_SCHEDULES[sched] = nothing
     return pointer_from_objref(sched)
 end
+
+_enzyme_init_regions(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid} =
+    _enzyme_init(data, nsteps, bytes, false)
+_enzyme_init_state(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid} =
+    _enzyme_init(data, nsteps, bytes, true)
 
 function _enzyme_next_action(state::Ptr{Cvoid}, out::Ptr{Action})::Cvoid
     unsafe_store!(out, next_action!(_schedule(state).actions))
@@ -207,7 +249,7 @@ function _enzyme_store(
     n::UInt64,
 )::Cvoid
     sched = _schedule(state)
-    storage, i = _slot_storage(sched, slot)
+    storage, i = _region_storage(sched, slot)
     save!(storage, _pack!(sched.buffer, regions, n), i)
     return nothing
 end
@@ -220,9 +262,37 @@ function _enzyme_restore(
     n::UInt64,
 )::Cvoid
     sched = _schedule(state)
-    storage, i = _slot_storage(sched, slot)
+    storage, i = _region_storage(sched, slot)
     load!(sched.buffer, storage, i)
     _unpack!(regions, n, sched.buffer)
+    return nothing
+end
+
+# The loop body of EnzymeCore.checkpoint_for: its box is the first word of the
+# step's environment.
+_loop_body(env::Ptr{Cvoid}) = unsafe_pointer_to_objref(unsafe_load(Ptr{Ptr{Cvoid}}(env)))[]
+
+function _enzyme_save_state(
+    state::Ptr{Cvoid},
+    slot::Int64,
+    step::Int64,
+    env::Ptr{Cvoid},
+)::Cvoid
+    sched = _schedule(state)
+    storage, i = _state_storage(sched, slot)
+    save!(storage, _loop_body(env), i)
+    return nothing
+end
+
+function _enzyme_load_state(
+    state::Ptr{Cvoid},
+    slot::Int64,
+    step::Int64,
+    env::Ptr{Cvoid},
+)::Cvoid
+    sched = _schedule(state)
+    storage, i = _state_storage(sched, slot)
+    load!(_loop_body(env), storage, i)
     return nothing
 end
 
@@ -232,32 +302,48 @@ function _enzyme_finalize(state::Ptr{Cvoid})::Cvoid
 end
 
 const ENZYME_VTABLE = Ref{EnzymeCheckpointScheme}()
+const ENZYME_VTABLE_STATE = Ref{EnzymeCheckpointScheme}()
 
 function _init_enzyme_abi()
+    next = @cfunction(_enzyme_next_action, Cvoid, (Ptr{Cvoid}, Ptr{Action}))
+    store = @cfunction(
+        _enzyme_store,
+        Cvoid,
+        (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
+    )
+    restore = @cfunction(
+        _enzyme_restore,
+        Cvoid,
+        (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
+    )
+    finalize = @cfunction(_enzyme_finalize, Cvoid, (Ptr{Cvoid},))
     ENZYME_VTABLE[] = EnzymeCheckpointScheme(
         ENZYME_CKPT_ABI_VERSION,
-        @cfunction(_enzyme_init, Ptr{Cvoid}, (Ptr{Cvoid}, Int64, UInt64)),
-        @cfunction(_enzyme_next_action, Cvoid, (Ptr{Cvoid}, Ptr{Action})),
-        @cfunction(
-            _enzyme_store,
-            Cvoid,
-            (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
-        ),
-        @cfunction(
-            _enzyme_restore,
-            Cvoid,
-            (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
-        ),
+        @cfunction(_enzyme_init_regions, Ptr{Cvoid}, (Ptr{Cvoid}, Int64, UInt64)),
+        next,
+        store,
+        restore,
         C_NULL,
-        @cfunction(_enzyme_finalize, Cvoid, (Ptr{Cvoid},)),
+        finalize,
         C_NULL,
         C_NULL,
+    )
+    ENZYME_VTABLE_STATE[] = EnzymeCheckpointScheme(
+        ENZYME_CKPT_ABI_VERSION,
+        @cfunction(_enzyme_init_state, Ptr{Cvoid}, (Ptr{Cvoid}, Int64, UInt64)),
+        next,
+        store,
+        restore,
+        C_NULL,
+        finalize,
+        @cfunction(_enzyme_save_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
+        @cfunction(_enzyme_load_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
     )
     return nothing
 end
 
 """
-    enzyme_scheme(alg::Scheme) -> (scheme::Ptr{Cvoid}, data::Ptr{Cvoid})
+    enzyme_scheme(alg::Scheme; state = false) -> (scheme::Ptr{Cvoid}, data::Ptr{Cvoid})
 
 The two pointers that make `alg` the scheme of a loop Enzyme differentiates:
 pass them as `enzyme_scheme, scheme, data` to `__enzyme_checkpoint_for`, or
@@ -265,10 +351,44 @@ through the code that does. `alg` is a scheme as given to `@ad_checkpoint`, for
 example `Revolve(3)` or `Periodic(4; storage = HDF5Storage)`; each run of the
 loop instantiates it anew. Keep `alg` alive (`GC.@preserve`) until the reverse
 pass has run.
+
+Snapshots are of the memory regions Enzyme hands over. With `state = true` they
+are copies of the loop body of `EnzymeCore.checkpoint_for` instead (see
+[`EnzymeLLVM`](@ref)).
 """
-function enzyme_scheme(alg::Scheme)
+function enzyme_scheme(alg::Scheme; state::Bool = false)
+    vtable = state ? ENZYME_VTABLE_STATE : ENZYME_VTABLE
     return (
-        Ptr{Cvoid}(Base.unsafe_convert(Ptr{EnzymeCheckpointScheme}, ENZYME_VTABLE)),
+        Ptr{Cvoid}(Base.unsafe_convert(Ptr{EnzymeCheckpointScheme}, vtable)),
         pointer_from_objref(alg),
     )
+end
+
+"""
+    EnzymeLLVM(alg::Scheme)
+
+`alg`, applied by Enzyme's LLVM core rather than by this package's EnzymeRules:
+
+    @ad_checkpoint EnzymeLLVM(Revolve(3)) for i = 1:n
+        ...
+    end
+
+Enzyme differentiates each iteration once, at compile time, and runs the
+schedule of `alg` itself; snapshots are copies of the loop body, stored in the
+storage of `alg`. Only for loops are supported.
+"""
+struct EnzymeLLVM{S<:Scheme}
+    scheme::S
+end
+
+function checkpoint_for(body::Function, alg::EnzymeLLVM, range::UnitRange{Int})
+    scheme, data = enzyme_scheme(alg.scheme; state = true)
+    GC.@preserve alg EnzymeCore.checkpoint_for(
+        scheme,
+        data,
+        first(range),
+        length(range),
+        body,
+    )
+    return nothing
 end

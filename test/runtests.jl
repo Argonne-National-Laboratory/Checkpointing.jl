@@ -7,10 +7,17 @@ using HDF5
 @testset "Checkpointing.jl" begin
     @testset "Enzyme..." begin
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(Checkpointing.checkpoint_for, Tuple{Any,Any,Any}),
+            Base.signature_type(Checkpointing.checkpoint_for, Tuple{Any,Scheme,Any}),
         )
         @test Enzyme.EnzymeRules.has_rrule_from_sig(
-            Base.signature_type(Checkpointing.checkpoint_while, Tuple{Any,Any}),
+            Base.signature_type(Checkpointing.checkpoint_while, Tuple{Any,Scheme}),
+        )
+        # EnzymeLLVM loops are reversed by Enzyme itself.
+        @test !Enzyme.EnzymeRules.has_rrule_from_sig(
+            Base.signature_type(
+                Checkpointing.checkpoint_for,
+                Tuple{Any,EnzymeLLVM{Revolve{Nothing}},Any},
+            ),
         )
         include("speelpenning.jl")
         errf, errg = main()
@@ -87,6 +94,7 @@ using HDF5
     include("correctness.jl")
     include("burgers.jl")
     include("enzyme_abi.jl")
+    include("enzyme_llvm.jl")
     @testset "Test writing checkpoints out" begin
         include("output_chkp.jl")
         @testset "$scheme" for scheme in [:Revolve, :Periodic]

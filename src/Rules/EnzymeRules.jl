@@ -97,7 +97,7 @@ function augmented_primal(
     func::Const{typeof(Checkpointing.checkpoint_for)},
     ret,
     body,
-    alg,
+    alg::Annotation{<:Scheme},
     range,
 )
     check_closure_captures(body)
@@ -116,7 +116,7 @@ function reverse(
     dret::Type{<:Const},
     tape,
     body::Union{Const,Duplicated,MixedDuplicated},
-    alg,
+    alg::Annotation{<:Scheme},
     range,
 )
     scheme, fwd_tape = tape
@@ -131,7 +131,7 @@ function augmented_primal(
     func::Const{typeof(Checkpointing.checkpoint_while)},
     ret,
     body,
-    alg,
+    alg::Annotation{<:Scheme},
 )
     check_closure_captures(body)
     scheme = instantiate(typeof(body.val), alg.val)
@@ -145,7 +145,7 @@ function reverse(
     dret::Type{<:Const},
     tape,
     body::Union{Const,Duplicated,MixedDuplicated},
-    alg,
+    alg::Annotation{<:Scheme},
 )
     scheme, fwd_tape = tape
     dbody = shadow(body)

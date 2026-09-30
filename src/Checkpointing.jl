@@ -1,6 +1,7 @@
 module Checkpointing
 
 using Serialization
+import EnzymeCore
 
 """
     Scheme
@@ -57,7 +58,7 @@ export instantiate
 export reset!
 export AbstractStorage, ArrayStorage, HDF5Storage
 export Revolve, Periodic, Online_r2
-export enzyme_scheme
+export enzyme_scheme, EnzymeLLVM
 
 function serialize(x)
     s = IOBuffer()
