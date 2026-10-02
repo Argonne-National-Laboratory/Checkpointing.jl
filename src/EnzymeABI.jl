@@ -897,11 +897,7 @@ function _run_table(::Type{R}) where {R<:EnzymeLLVMRun}
 end
 
 
-"""
-    enzyme_scheme(run::EnzymeLLVMRun) -> Ptr{Cvoid}
-
-The scheme table of a loop through EnzymeLLVM; `run` is its data.
-"""
+# The scheme table of a loop through EnzymeLLVM; `run` is its data.
 enzyme_scheme(run::R) where {R<:EnzymeLLVMRun} =
     Ptr{Cvoid}(pointer_from_objref(run)) + fieldoffset(R, 2)
 
