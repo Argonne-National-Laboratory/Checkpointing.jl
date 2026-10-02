@@ -66,7 +66,12 @@ function Periodic{FT}(
     )
 end
 
-function Periodic(checkpoints::Integer; storage = ArrayStorage, kwargs...)
+# `storage::Type{S}` so that the storage this makes has a concrete type.
+function Periodic(
+    checkpoints::Integer;
+    storage::Type{S} = ArrayStorage,
+    kwargs...,
+) where {S<:AbstractStorage}
     return Periodic{Nothing}(
         0,
         checkpoints;

@@ -142,7 +142,12 @@ The longest loop Online_r2 can checkpoint with `checkpoints` checkpoints, or
 """
 online_r2_limit(c::Integer) = c < 4 ? typemax(Int) : (c + 2) * (c + 1) ÷ 2 - 1
 
-function Online_r2(checkpoints::Integer; storage = ArrayStorage, kwargs...)
+# `storage::Type{S}` so that the storage this makes has a concrete type.
+function Online_r2(
+    checkpoints::Integer;
+    storage::Type{S} = ArrayStorage,
+    kwargs...,
+) where {S<:AbstractStorage}
     return Online_r2{Nothing}(
         checkpoints;
         storage = _new_storage(storage, checkpoints),
