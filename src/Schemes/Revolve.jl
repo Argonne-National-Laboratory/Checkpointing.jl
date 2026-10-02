@@ -145,7 +145,12 @@ function Revolve{FT}(
     return revolve
 end
 
-function Revolve(checkpoints::Integer; storage = ArrayStorage, kwargs...)
+# `storage::Type{S}` so that the storage this makes has a concrete type.
+function Revolve(
+    checkpoints::Integer;
+    storage::Type{S} = ArrayStorage,
+    kwargs...,
+) where {S<:AbstractStorage}
     return Revolve{Nothing}(
         0,
         checkpoints;

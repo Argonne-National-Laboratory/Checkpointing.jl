@@ -135,7 +135,10 @@ function decode_paths(paths::Ptr{Int64}, len::Integer)
     k = 1
     while k <= len
         n = unsafe_load(paths, k)
-        path = [Int(unsafe_load(paths, k + j)) for j = 1:n]
+        path = Vector{Int}(undef, n)
+        for j = 1:n
+            path[j] = Int(unsafe_load(paths, k + j))
+        end
         offset = Int(unsafe_load(paths, k + n + 1))
         flags = unsafe_load(paths, k + n + 2)
         push!(out, AccessPath(path, offset, flags & 1 != 0, flags & 2 != 0))
@@ -144,147 +147,7 @@ function decode_paths(paths::Ptr{Int64}, len::Integer)
     return out
 end
 
-_inline(T) = Base.allocatedinline(T)
-
-# The field of `T` at byte `offset`, looking into fields stored inline: its
-# field path from `T`, its type, and the offset left over inside it.
-function _field_at(T::DataType, offset::Int)
-    isstructtype(T) || return nothing
-    for i = 1:fieldcount(T)
-        fo = Int(fieldoffset(T, i))
-        ft = fieldtype(T, i)
-        size = _inline(ft) ? sizeof(ft) : sizeof(Ptr{Cvoid})
-        fo <= offset < fo + max(size, 1) || continue
-        if _inline(ft) && ft isa DataType && isstructtype(ft) && fieldcount(ft) > 0
-            inner = _field_at(ft, offset - fo)
-            inner === nothing && return ((i,), ft, offset - fo)
-            return ((i, inner[1]...), inner[2], inner[3])
-        end
-        return ((i,), ft, offset - fo)
-    end
-    return nothing
-end
-
-_getfields(obj, fields) = foldl(getfield, fields; init = obj)
-
-# The fields leading to the object the pointer field at byte `offset` of an
-# object of type `T` points to, or nothing if that is not a Julia object
-# reference (an array's data, say).
-function _deref_fields(T::DataType, offset::Int)
-    T <: AbstractArray && return nothing
-    field = _field_at(T, offset)
-    field === nothing && return nothing
-    fields, ft, rest = field
-    (rest == 0 && !_inline(ft)) || return nothing
-    return fields
-end
-
-"""
-    MaskedSnapshot
-
-What a snapshot of the loop body holds when Enzyme said what the step accesses:
-the objects it writes (or reads) as a whole -- typically arrays -- and the
-scalar fields of mutable objects.
-"""
-mutable struct MaskedSnapshot
-    objects::Vector{Any}
-    scalars::Vector{Any}
-end
-
-# How to find one piece of the loop body a snapshot holds: the fields to follow
-# from the box, each after checking the type of the object it is taken from,
-# and at the end the whole object (field 0) or a scalar field of a mutable one
-# of type `owner`.
-struct Leaf
-    hops::Vector{Tuple{DataType,Vector{Int}}}
-    owner::DataType
-    field::Int
-end
-
-# The leaves of the snapshot, worked out from the types of the objects met in
-# `box`: whole objects, and scalar fields of mutable objects.
-function _plan_leaves(sched, box)
-    leaves = Leaf[]
-    for access in sched.paths
-        keep = access.write || (sched.snapshot === :accessed && access.read)
-        # The box itself only ever holds the body.
-        (keep && !isempty(access.path)) || continue
-        obj = box
-        hops = Tuple{DataType,Vector{Int}}[]
-        whole = access.offset < 0
-        for offset in access.path
-            fields = _deref_fields(typeof(obj), offset)
-            if fields === nothing
-                whole = true
-                break
-            end
-            push!(hops, (typeof(obj), collect(Int, fields)))
-            obj = _getfields(obj, fields)
-        end
-        leaf = if whole || obj isa AbstractArray
-            Leaf(hops, Nothing, 0)
-        else
-            field = _field_at(typeof(obj), access.offset)
-            if field === nothing || !ismutable(obj)
-                Leaf(hops, Nothing, 0)
-            else
-                i = field[1][1]
-                # A field holding references only matters through what they
-                # point to.
-                isbitstype(fieldtype(typeof(obj), i)) || continue
-                Leaf(hops, typeof(obj), i)
-            end
-        end
-        any(l -> l.hops == leaf.hops && l.field == leaf.field, leaves) ||
-            push!(leaves, leaf)
-    end
-    return leaves
-end
-
-# Fills `sched.live` with the leaves in `box`; false if a type on the way is not
-# the one the plan was made for.
-function _fill_leaves!(sched, leaves::Vector{Leaf}, box)
-    live = sched.live
-    empty!(live.objects)
-    empty!(live.scalars)
-    empty!(sched.owners)
-    for leaf in leaves
-        obj = box
-        for (T, fields) in leaf.hops
-            typeof(obj) === T || return false
-            for f in fields
-                obj = getfield(obj, f)
-            end
-        end
-        if leaf.field == 0
-            _push_new!(live.objects, obj)
-        else
-            typeof(obj) === leaf.owner || return false
-            push!(sched.owners, (obj, leaf.field))
-            push!(live.scalars, getfield(obj, leaf.field))
-        end
-    end
-    return true
-end
-
-function _push_new!(objects::Vector{Any}, obj)
-    for o in objects
-        o === obj && return objects
-    end
-    return push!(objects, obj)
-end
-
-# The pieces of the loop body in `box` that a snapshot holds, in `sched.live`
-# (their owners in `sched.owners`). The plan is made once per schedule, and
-# again only if the body holds objects of other types.
-function _leaves!(sched, box)
-    leaves = sched.leaves
-    if leaves === nothing || !_fill_leaves!(sched, leaves, box)
-        leaves = sched.leaves = _plan_leaves(sched, box)
-        _fill_leaves!(sched, leaves, box)
-    end
-    return sched.live
-end
+# What a snapshot of the loop body holds: see BodySnapshot.jl.
 
 """
     EnzymeSchedule
@@ -300,6 +163,9 @@ mutable struct EnzymeSchedule{S,A,ST,I,E}
     restore_cb::Ptr{Cvoid}
     save_state_cb::Ptr{Cvoid}
     load_state_cb::Ptr{Cvoid}
+    set_paths_cb::Ptr{Cvoid}
+    set_nsteps_cb::Ptr{Cvoid}
+    finalize_cb::Ptr{Cvoid}
     scheme::S
     actions::A
     buffer::Vector{UInt8}
@@ -319,12 +185,9 @@ mutable struct EnzymeSchedule{S,A,ST,I,E}
     # and which of it a snapshot holds: nothing = the whole body.
     paths::Union{Nothing,Vector{AccessPath}}
     snapshot::Symbol
-    # How to find what a masked snapshot holds (from `paths`), and the snapshot
-    # of the live state it is copied from or to, with the objects owning its
-    # scalars.
-    leaves::Union{Nothing,Vector{Leaf}}
-    live::MaskedSnapshot
-    owners::Vector{Tuple{Any,Int}}
+    # The leaves of the body a snapshot holds (BodySnapshot.jl), decided at the
+    # first snapshot.
+    mask::Union{Nothing,Vector{Bool}}
     # Bytes copied into snapshots, for LAST_SNAPSHOT_BYTES: the size of the
     # first snapshot, and how many were taken.
     snapshot_size::Int
@@ -400,6 +263,9 @@ function _new_schedule(scheme, actions, inner, segments, bytes, ::Type{FT}) wher
         C_NULL,
         C_NULL,
         C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
         scheme,
         actions,
         # Sized on first use: array storage does not need it (see `_store!`).
@@ -413,8 +279,6 @@ function _new_schedule(scheme, actions, inner, segments, bytes, ::Type{FT}) wher
         nothing,
         :all,
         nothing,
-        MaskedSnapshot(Any[], Any[]),
-        Tuple{Any,Int}[],
         0,
         0,
     )
@@ -709,22 +573,24 @@ _loop_box(env::Ptr{Cvoid}) = unsafe_pointer_to_objref(unsafe_load(Ptr{Ptr{Cvoid}
 # so a mask that saves (next to) nothing only makes snapshots slower.
 const MASK_MIN_SAVING = 0.05
 
-# Whether snapshots hold only what the step accesses. Decided at the first
-# snapshot, before any is taken, and kept for the schedule: without the paths,
-# with `snapshot = :all`, or if the mask saves too little, snapshots are of the
-# whole body.
-function _masked!(sched, box)
-    (sched.paths === nothing || sched.snapshot === :all) && return false
-    sched.leaves === nothing || return true
-    leaves = _plan_leaves(sched, box)
-    _fill_leaves!(sched, leaves, box)
-    whole = Base.summarysize(box[])
-    if Base.summarysize(sched.live) > (1 - MASK_MIN_SAVING) * whole
-        sched.paths = nothing
-        return false
+# The leaves of the body snapshots hold (BodySnapshot.jl). Decided at the
+# first snapshot, before any is taken, and kept for the schedule: without the
+# paths, with `snapshot = :all`, or if leaving the rest out saves too little,
+# all of them.
+function _mask!(sched::EnzymeSchedule, body::B) where {B}
+    mask = sched.mask
+    mask === nothing || return mask
+    all = fill(true, _nleaves_of(B))
+    mask = all
+    if sched.paths !== nothing && sched.snapshot !== :all
+        masked = _mask_for(_leaf_table(B), sched.paths, sched.snapshot)
+        whole = _snap_bytes(body, all, Val(0))
+        if _snap_bytes(body, masked, Val(0)) <= (1 - MASK_MIN_SAVING) * whole
+            mask = masked
+        end
     end
-    sched.leaves = leaves
-    return true
+    sched.mask = mask
+    return mask
 end
 
 function _enzyme_save_state(
@@ -745,33 +611,54 @@ function _enzyme_save_state(
     return nothing
 end
 
-_save_state_env!(sched::EnzymeSchedule, slot, step, env) =
-    _save_state!(sched, slot, step, _loop_box(env))
+# The box is EnzymeCore's `Ref(body)`, of the type the schedule was made for.
+_typed_box(sched::EnzymeSchedule, env) =
+    _loop_box(env)::Base.RefValue{_snapshot_type(sched)}
 
-# What snapshots of the loop body are: its type, or with a mask also
-# MaskedSnapshot.
+_save_state_env!(sched::EnzymeSchedule, slot, step, env) =
+    _save_state!(sched, slot, step, _typed_box(sched, env))
+
+# What snapshots are: the loop body's type, or the bytes of the regions.
 _snapshot_type(::EnzymeSchedule{S,A,ST,I,ArrayStorage{FT}}) where {S,A,ST,I,FT} = FT
 
 function _save_state!(sched::EnzymeSchedule, slot, step, box)
     storage, i = _state_storage(sched, slot, step, true)
-    if _masked!(sched, box)
-        snap = _leaves!(sched, box)
-        _count_snapshot!(sched, snap)
-        save!(storage, snap, i)
-    else
-        body = box[]::_snapshot_type(sched)
-        _count_snapshot!(sched, body)
-        save!(storage, body, i)
-    end
+    body = box[]::_snapshot_type(sched)
+    mask = _mask!(sched, body)
+    sched.snapshots == 0 && (sched.snapshot_size = _snap_bytes(body, mask, Val(0)))
+    sched.snapshots += 1
+    _save_body!(storage, body, i, mask)
     return nothing
 end
 
-# Measuring a snapshot walks all of it, so only the first is.
-function _count_snapshot!(sched::EnzymeSchedule, snap)
-    sched.snapshots == 0 && (sched.snapshot_size = Base.summarysize(snap))
-    sched.snapshots += 1
-    return nothing
+# In memory, a snapshot is allocated once per slot and holds copies of the
+# leaves in the mask; other storage (HDF5) keeps the whole body.
+function _save_body!(storage::ArrayStorage{B}, body::B, i, mask) where {B}
+    slots = storage._fstorage
+    checkbounds(slots, i)
+    if isassigned(slots, i)
+        _snap_copy!((@inbounds slots[i]), body, mask, Val(0))
+    else
+        @inbounds slots[i] = _snap_alloc(body, mask, Val(0))
+    end
+    return storage
 end
+
+_save_body!(storage, body, i, mask) = save!(storage, body, i)
+
+function _load_body!(body::B, storage::ArrayStorage{B}, i, mask) where {B}
+    slots = storage._fstorage
+    checkbounds(slots, i)
+    isassigned(slots, i) || throw(
+        ArgumentError(
+            "[Checkpointing.jl]: checkpoint $i was restored before it was stored.",
+        ),
+    )
+    _snap_copy!(body, (@inbounds slots[i]), mask, Val(0))
+    return body
+end
+
+_load_body!(body, storage, i, mask) = load!(body, storage, i)
 
 function _enzyme_load_state(
     state::Ptr{Cvoid},
@@ -792,11 +679,48 @@ function _enzyme_load_state(
 end
 
 _load_state_env!(sched::EnzymeSchedule, slot, step, env) =
-    _load_state!(sched, slot, step, _loop_box(env))
+    _load_state!(sched, slot, step, _typed_box(sched, env))
+
+
+function _load_state!(sched::EnzymeSchedule, slot, step, box)
+    storage, i = _state_storage(sched, slot, step, false)
+    body = box[]::_snapshot_type(sched)
+    _load_body!(body, storage, i, _mask!(sched, body))
+    return nothing
+end
+
+function _enzyme_set_nsteps(state::Ptr{Cvoid}, n::Int64)::Cvoid
+    ccall(_callback(state, 7), Cvoid, (Ptr{Cvoid}, Int64), state, n)
+    return nothing
+end
+
+_set_nsteps!(sched::EnzymeSchedule, n) = (set_nsteps!(sched.actions, Int(n)); nothing)
+
+function _enzyme_set_paths(state::Ptr{Cvoid}, paths::Ptr{Int64}, len::UInt64)::Cvoid
+    ccall(_callback(state, 6), Cvoid, (Ptr{Cvoid}, Ptr{Int64}, UInt64), state, paths, len)
+    return nothing
+end
+
+function _set_paths!(sched::EnzymeSchedule, paths, len)
+    sched.paths = decode_paths(paths, len)
+    sched.mask = nothing
+    return nothing
+end
+
+function _enzyme_finalize(state::Ptr{Cvoid})::Cvoid
+    ccall(_callback(state, 8), Cvoid, (Ptr{Cvoid},), state)
+    return nothing
+end
+
+function _finalize!(sched::EnzymeSchedule)
+    LAST_SNAPSHOT_BYTES[] = sched.snapshot_size * sched.snapshots
+    delete!(LIVE_SCHEDULES, sched)
+    return nothing
+end
 
 # Defined after the callbacks it compiles.
 function _set_callbacks!(sched::S) where {S<:EnzymeSchedule}
-    for k = 1:5
+    for k = 1:8
         fieldoffset(S, k) == (k - 1) * sizeof(Ptr{Cvoid}) || error("unreachable")
     end
     sched.next_action_cb = @cfunction(_next_action!, Cvoid, (Ref{S}, Ptr{Action}))
@@ -804,50 +728,17 @@ function _set_callbacks!(sched::S) where {S<:EnzymeSchedule}
         @cfunction(_store!, Cvoid, (Ref{S}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64))
     sched.restore_cb =
         @cfunction(_restore!, Cvoid, (Ref{S}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64))
-    # Snapshots of the regions only need the above; not compiling the loop
-    # body's callbacks for them keeps the code juliac --trim has to compile
-    # free of the dynamically typed masked snapshots.
+    sched.set_nsteps_cb = @cfunction(_set_nsteps!, Cvoid, (Ref{S}, Int64))
+    sched.finalize_cb = @cfunction(_finalize!, Cvoid, (Ref{S},))
+    # Snapshots of the regions only need the above.
     if _snapshot_type(sched) !== Vector{UInt8}
         sched.save_state_cb =
             @cfunction(_save_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
         sched.load_state_cb =
             @cfunction(_load_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
+        sched.set_paths_cb = @cfunction(_set_paths!, Cvoid, (Ref{S}, Ptr{Int64}, UInt64))
     end
     return sched
-end
-
-function _load_state!(sched::EnzymeSchedule, slot, step, box)
-    storage, i = _state_storage(sched, slot, step, false)
-    if _masked!(sched, box)
-        live = _leaves!(sched, box)
-        # Copies the stored objects into the live ones.
-        load!(live, storage, i)
-        for (k, (o, f)) in enumerate(sched.owners)
-            setfield!(o, f, live.scalars[k])
-        end
-    else
-        load!(box[]::_snapshot_type(sched), storage, i)
-    end
-    return nothing
-end
-
-function _enzyme_set_nsteps(state::Ptr{Cvoid}, n::Int64)::Cvoid
-    set_nsteps!(_schedule(state).actions, Int(n))
-    return nothing
-end
-
-function _enzyme_set_paths(state::Ptr{Cvoid}, paths::Ptr{Int64}, len::UInt64)::Cvoid
-    sched = _schedule(state)
-    sched.paths = decode_paths(paths, len)
-    sched.leaves = nothing
-    return nothing
-end
-
-function _enzyme_finalize(state::Ptr{Cvoid})::Cvoid
-    sched = _schedule(state)
-    LAST_SNAPSHOT_BYTES[] = sched.snapshot_size * sched.snapshots
-    delete!(LIVE_SCHEDULES, sched)
-    return nothing
 end
 
 const ENZYME_VTABLE = Ref{EnzymeCheckpointScheme}()
@@ -961,34 +852,76 @@ mutable struct EnzymeLLVM{S<:Scheme}
 end
 
 # The data pointer of one loop through EnzymeLLVM: its scheme, and the type of
-# its body, which snapshots are copies of.
+# its body, which snapshots are copies of. It holds the loop's scheme table,
+# whose `init` knows this type, so that nothing from `init` to `finalize`
+# dispatches dynamically (and juliac --trim can compile it).
 mutable struct EnzymeLLVMRun{B,E<:EnzymeLLVM}
     alg::E
+    table::EnzymeCheckpointScheme
+    EnzymeLLVMRun{B,E}(alg::E) where {B,E<:EnzymeLLVM} = new{B,E}(alg)
 end
 
-EnzymeLLVMRun(alg::E, body::B) where {B,E<:EnzymeLLVM} = EnzymeLLVMRun{B,E}(alg)
+function EnzymeLLVMRun(alg::E, body::B) where {B,E<:EnzymeLLVM}
+    run = EnzymeLLVMRun{B,E}(alg)
+    run.table = _run_table(typeof(run))
+    return run
+end
+
+function _init_run(run::EnzymeLLVMRun, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid}
+    sched = _schedule_for(run, Int(nsteps), Int(bytes), true)
+    LIVE_SCHEDULES[sched] = nothing
+    return pointer_from_objref(sched)
+end
+
+function _run_table(::Type{R}) where {R<:EnzymeLLVMRun}
+    return EnzymeCheckpointScheme(
+        ENZYME_CKPT_ABI_VERSION,
+        @cfunction(_init_run, Ptr{Cvoid}, (Ref{R}, Int64, UInt64)),
+        @cfunction(_enzyme_next_action, Cvoid, (Ptr{Cvoid}, Ptr{Action})),
+        @cfunction(
+            _enzyme_store,
+            Cvoid,
+            (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
+        ),
+        @cfunction(
+            _enzyme_restore,
+            Cvoid,
+            (Ptr{Cvoid}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64)
+        ),
+        @cfunction(_enzyme_set_nsteps, Cvoid, (Ptr{Cvoid}, Int64)),
+        @cfunction(_enzyme_finalize, Cvoid, (Ptr{Cvoid},)),
+        @cfunction(_enzyme_save_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
+        @cfunction(_enzyme_load_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
+        @cfunction(_enzyme_set_paths, Cvoid, (Ptr{Cvoid}, Ptr{Int64}, UInt64)),
+    )
+end
+
+
+# The scheme table of a loop through EnzymeLLVM; `run` is its data.
+enzyme_scheme(run::R) where {R<:EnzymeLLVMRun} =
+    Ptr{Cvoid}(pointer_from_objref(run)) + fieldoffset(R, 2)
 
 function _schedule_for(run::EnzymeLLVMRun{B}, nsteps, bytes, state) where {B}
     alg = run.alg
     # Snapshots of the loop body keep its type, so that copying them is
     # compiled for it; with a mask they may also be of what the step accesses.
-    FT = !state ? Vector{UInt8} : alg.snapshot === :all ? B : Union{B,MaskedSnapshot}
+    FT = state ? B : Vector{UInt8}
     sched = enzyme_schedule(alg.scheme, nsteps, bytes, FT)
     sched.snapshot = alg.snapshot
     return sched
 end
 
 function checkpoint_while(body::Function, alg::EnzymeLLVM)
-    scheme = enzyme_scheme(alg.scheme; state = true)[1]
     run = EnzymeLLVMRun(alg, body)
+    scheme = enzyme_scheme(run)
     data = pointer_from_objref(run)
     GC.@preserve run EnzymeCore.checkpoint_while(scheme, data, body)
     return nothing
 end
 
 function checkpoint_for(body::Function, alg::EnzymeLLVM, range::UnitRange{Int})
-    scheme = enzyme_scheme(alg.scheme; state = true)[1]
     run = EnzymeLLVMRun(alg, body)
+    scheme = enzyme_scheme(run)
     data = pointer_from_objref(run)
     GC.@preserve run EnzymeCore.checkpoint_for(
         scheme,

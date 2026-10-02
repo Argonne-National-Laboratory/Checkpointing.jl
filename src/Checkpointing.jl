@@ -84,7 +84,7 @@ this used to -- cannot be precompiled, bumps the world age at the call site, and
 cannot name a type that lives in a package extension or in the caller's own
 module.
 """
-_new_storage(S::Type, checkpoints::Integer) = S{Nothing}(checkpoints)
+_new_storage(::Type{S}, checkpoints::Integer) where {S} = S{Nothing}(checkpoints)
 
 _new_storage(S::Symbol, ::Integer) = throw(
     ArgumentError(
@@ -120,6 +120,7 @@ end
 
 include("Rules/EnzymeRules.jl")
 include("EnzymeABI.jl")
+include("BodySnapshot.jl")
 
 
 """

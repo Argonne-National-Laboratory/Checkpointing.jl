@@ -1,0 +1,5 @@
+[deps]
+Checkpointing = "eb46d486-4f9c-4c3d-b445-a617f2a2f1ca"
+
+[sources]
+Checkpointing = {path = "../../.."}
