@@ -402,7 +402,8 @@ function _new_schedule(scheme, actions, inner, segments, bytes, ::Type{FT}) wher
         C_NULL,
         scheme,
         actions,
-        zeros(UInt8, bytes),
+        # Sized on first use: array storage does not need it (see `_store!`).
+        UInt8[],
         scheme.storage,
         inner,
         segments,
@@ -627,8 +628,31 @@ end
 
 function _store!(sched::EnzymeSchedule, slot, step, regions, n)
     storage, i = _region_storage(sched, slot, step, true)
-    save!(storage, _pack!(sched.buffer, regions, n), i)
+    _store_regions!(storage, i, sched.buffer, regions, n)
     return nothing
+end
+
+_region_bytes(regions::Ptr{EnzymeCkptRegion}, n) =
+    sum(r -> Int(unsafe_load(regions, r).bytes), 1:n; init = 0)
+
+# In memory, the regions are copied into the slot itself, as Enzyme's own
+# schemes do; any other storage takes them packed into `buffer`.
+function _store_regions!(storage::ArrayStorage{Vector{UInt8}}, i, buffer, regions, n)
+    slots = storage._fstorage
+    checkbounds(slots, i)
+    bytes = _region_bytes(regions, n)
+    if !isassigned(slots, i)
+        @inbounds slots[i] = Vector{UInt8}(undef, bytes)
+    end
+    @inbounds slot = slots[i]
+    length(slot) == bytes || resize!(slot, bytes)
+    _pack!(slot, regions, n)
+    return storage
+end
+
+function _store_regions!(storage, i, buffer, regions, n)
+    resize!(buffer, _region_bytes(regions, n))
+    return save!(storage, _pack!(buffer, regions, n), i)
 end
 
 function _enzyme_restore(
@@ -653,9 +677,25 @@ end
 
 function _restore!(sched::EnzymeSchedule, slot, step, regions, n)
     storage, i = _region_storage(sched, slot, step, false)
-    load!(sched.buffer, storage, i)
-    _unpack!(regions, n, sched.buffer)
+    _restore_regions!(regions, n, storage, i, sched.buffer)
     return nothing
+end
+
+function _restore_regions!(regions, n, storage::ArrayStorage{Vector{UInt8}}, i, buffer)
+    slots = storage._fstorage
+    checkbounds(slots, i)
+    isassigned(slots, i) || throw(
+        ArgumentError(
+            "[Checkpointing.jl]: checkpoint $i was restored before it was stored.",
+        ),
+    )
+    return _unpack!(regions, n, @inbounds slots[i])
+end
+
+function _restore_regions!(regions, n, storage, i, buffer)
+    resize!(buffer, _region_bytes(regions, n))
+    load!(buffer, storage, i)
+    return _unpack!(regions, n, buffer)
 end
 
 # The loop body of EnzymeCore.checkpoint_for: its box is the first word of the
