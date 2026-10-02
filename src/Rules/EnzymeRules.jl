@@ -1,7 +1,9 @@
-using Enzyme
-import .EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
-using .EnzymeRules
-import EnzymeCore
+# EnzymeCore declares everything used here; Enzyme, which the caller loads to
+# differentiate, implements it. Not depending on Enzyme itself keeps the
+# schedules usable without its compiler, as in a library built with juliac.
+using EnzymeCore
+import EnzymeCore.EnzymeRules: augmented_primal, reverse, Annotation, has_rrule_from_sig
+using EnzymeCore.EnzymeRules
 
 # Floating-point scalar types that can cause activity analysis issues when captured
 # in closures alongside mutable structs. Integer types are always inactive in AD,

@@ -3,12 +3,12 @@
 # A minor extension is the  optional `bundle` parameter that allows to treat as many loop
 # iterations in one tape/adjoint sweep. If `bundle` is 1, the default, then the behavior is that of Alg. 799.
 
-mutable struct Periodic{FT} <: Scheme
+mutable struct Periodic{FT,ST<:AbstractStorage} <: Scheme
     steps::Int
     acp::Int
     period::Int
     verbose::Int
-    storage::AbstractStorage
+    storage::ST
     chkp_dump::Union{Nothing,ChkpDump}
 end
 
@@ -51,7 +51,7 @@ function Periodic{FT}(
         @info "[Checkpointing] Periodic checkpointing with $acp checkpoints and period $period"
     end
 
-    Periodic{FT}(
+    Periodic{FT,typeof(storage)}(
         steps,
         acp,
         period,
@@ -160,7 +160,7 @@ function rev_checkpoint_for(
             j = seg[n]
             load!(body, model_check_inner, n)
             dump_prim(alg.chkp_dump, j, body)
-            Enzyme.autodiff(
+            EnzymeCore.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,

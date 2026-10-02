@@ -23,6 +23,11 @@ memory, a device buffer, an offload pool -- specialize this.
 """
 checkpoint_alloc(x) = deepcopy(x)
 
+# An array of plain bits shares nothing, so `copy` does what `deepcopy` does,
+# and unlike it compiles with juliac --trim (snapshots of Enzyme's regions are
+# such arrays).
+checkpoint_alloc(x::Array{T}) where {T} = isbitstype(T) ? copy(x) : deepcopy(x)
+
 """
     checkpoint_copy!(dst, src) -> dst
 

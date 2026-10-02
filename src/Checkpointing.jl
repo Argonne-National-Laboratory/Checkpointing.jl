@@ -121,9 +121,6 @@ end
 include("Rules/EnzymeRules.jl")
 include("EnzymeABI.jl")
 
-function __init__()
-    _init_enzyme_abi()
-end
 
 """
     @ad_checkpoint(
