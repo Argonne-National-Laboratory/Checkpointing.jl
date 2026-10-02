@@ -20,7 +20,8 @@
 module CkptJuliac
 
 using Checkpointing
-using Checkpointing: EnzymeCheckpointScheme, EnzymeCkptRegion, Action, ENZYME_CKPT_ABI_VERSION
+using Checkpointing:
+    EnzymeCheckpointScheme, EnzymeCkptRegion, Action, ENZYME_CKPT_ABI_VERSION
 
 const C = Checkpointing
 
@@ -54,10 +55,8 @@ for (name, S) in (
     ctor = Symbol(:_new_, name)
     @eval begin
         # The concrete type of a running schedule of this scheme.
-        const $Sched = Core.Compiler.return_type(
-            C.enzyme_schedule,
-            Tuple{$S,Int,Int,Type{FT}},
-        )
+        const $Sched =
+            Core.Compiler.return_type(C.enzyme_schedule, Tuple{$S,Int,Int,Type{FT}})
 
         function $init(data::Ptr{Cvoid}, nsteps::Int64, bytes::UInt64)::Ptr{Cvoid}
             alg = unsafe_pointer_to_objref(data)::$S
