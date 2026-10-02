@@ -362,7 +362,9 @@ function _slot_storage(s::EnzymeSchedule{<:Online_r2}, slot, step, store)
         if a.revolve === nothing
             # The online phase overwrites its slot.
             i = slot + 1
-            filter!(kv -> kv.second != i, a.storemap)
+            let i = i
+                filter!(kv -> kv.second != i, a.storemap)
+            end
         else
             i = pop!(a.free)
         end
@@ -434,10 +436,11 @@ over, as in `rev_checkpoint_while`: that schedule is over one step more than the
 loop ran, which its first turn consumes, and its first turn of a real step is
 the forward sweep's last action. Snapshots are kept by step.
 """
-mutable struct OnlineActions{S}
+mutable struct OnlineActions{S,R}
     online::S
     oldcapo::Int
-    revolve::Any
+    # The offline Revolve, once the loop has ended.
+    revolve::Union{Nothing,R}
     skipped::Bool
     turned::Bool
     # step => storage index, and the free indices once the loop has ended
@@ -497,7 +500,15 @@ function enzyme_schedule(
 ) where {FT}
     steps < 0 || error("Checkpointing.jl: Online_r2 schedules while loops")
     scheme = instantiate(FT, alg)
-    actions = OnlineActions(scheme, 0, nothing, false, false, Dict{Int,Int}(), Int[])
+    actions = OnlineActions{typeof(scheme),Revolve{FT,ArrayStorage{FT}}}(
+        scheme,
+        0,
+        nothing,
+        false,
+        false,
+        Dict{Int,Int}(),
+        Int[],
+    )
     return _new_schedule(scheme, actions, nothing, 0, bytes, FT)
 end
 
@@ -753,10 +764,15 @@ function _set_callbacks!(sched::S) where {S<:EnzymeSchedule}
         @cfunction(_store!, Cvoid, (Ref{S}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64))
     sched.restore_cb =
         @cfunction(_restore!, Cvoid, (Ref{S}, Int64, Int64, Ptr{EnzymeCkptRegion}, UInt64))
-    sched.save_state_cb =
-        @cfunction(_save_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
-    sched.load_state_cb =
-        @cfunction(_load_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
+    # Snapshots of the regions only need the above; not compiling the loop
+    # body's callbacks for them keeps the code juliac --trim has to compile
+    # free of the dynamically typed masked snapshots.
+    if _snapshot_type(sched) !== Vector{UInt8}
+        sched.save_state_cb =
+            @cfunction(_save_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
+        sched.load_state_cb =
+            @cfunction(_load_state_env!, Cvoid, (Ref{S}, Int64, Int64, Ptr{Cvoid}))
+    end
     return sched
 end
 
@@ -797,6 +813,11 @@ end
 const ENZYME_VTABLE = Ref{EnzymeCheckpointScheme}()
 const ENZYME_VTABLE_STATE = Ref{EnzymeCheckpointScheme}()
 
+# The tables are filled in on first use rather than in `__init__`, so a program
+# that never hands a scheme to Enzyme through them -- like a library built with
+# juliac that has its own -- does not compile them.
+const _abi_initialized = Ref(false)
+
 function _init_enzyme_abi()
     next = @cfunction(_enzyme_next_action, Cvoid, (Ptr{Cvoid}, Ptr{Action}))
     store = @cfunction(
@@ -835,6 +856,7 @@ function _init_enzyme_abi()
         @cfunction(_enzyme_load_state, Cvoid, (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid})),
         @cfunction(_enzyme_set_paths, Cvoid, (Ptr{Cvoid}, Ptr{Int64}, UInt64)),
     )
+    _abi_initialized[] = true
     return nothing
 end
 
@@ -853,6 +875,7 @@ are copies of the loop body of `EnzymeCore.checkpoint_for` instead (see
 [`EnzymeLLVM`](@ref)).
 """
 function enzyme_scheme(alg::Scheme; state::Bool = false)
+    _abi_initialized[] || _init_enzyme_abi()
     vtable = state ? ENZYME_VTABLE_STATE : ENZYME_VTABLE
     return (
         Ptr{Cvoid}(Base.unsafe_convert(Ptr{EnzymeCheckpointScheme}, vtable)),

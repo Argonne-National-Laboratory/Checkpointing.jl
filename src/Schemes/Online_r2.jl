@@ -36,10 +36,11 @@ mutable struct OnlineR2State
     num_rep::Vector{Int}
 end
 
-mutable struct Online_r2{FT} <: Scheme
+mutable struct Online_r2{FT,ST<:AbstractStorage} <: Scheme
     state::OnlineR2State
-    revolve::Revolve{FT}
-    storage::AbstractStorage
+    # Built and rebuilt (`update_revolve`) with its default storage.
+    revolve::Revolve{FT,ArrayStorage{FT}}
+    storage::ST
 end
 
 const _ONLINE_OWN_FIELDS = (:state, :revolve, :storage)
@@ -129,7 +130,7 @@ function Online_r2{FT}(
         num_rep,
     )
 
-    online_r2 = Online_r2{FT}(state, revolve, storage)
+    online_r2 = Online_r2{FT,typeof(storage)}(state, revolve, storage)
     return online_r2
 end
 
@@ -568,7 +569,7 @@ function rev_checkpoint_while(config, tape, dbody::Function, alg::Online_r2)
             # so the first uturn has no adjoint to take -- it only consumes
             # that extra iteration.
         elseif (next_action.actionflag == Checkpointing.uturn)
-            Enzyme.autodiff(
+            EnzymeCore.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,

@@ -27,9 +27,11 @@ mutable struct RevolveState
     verbose::Int
 end
 
-mutable struct Revolve{FT} <: Scheme
+# `ST` is the type of the storage, so code that runs the schedule knows it
+# (and a library built with juliac --trim can compile it).
+mutable struct Revolve{FT,ST<:AbstractStorage} <: Scheme
     state::RevolveState
-    storage::AbstractStorage
+    storage::ST
     chkp_dump::Union{Nothing,ChkpDump}
 end
 
@@ -119,7 +121,7 @@ function Revolve{FT}(
         verbose,
     )
 
-    revolve = Revolve{FT}(
+    revolve = Revolve{FT,typeof(storage)}(
         state,
         storage,
         ChkpDump(
@@ -501,7 +503,7 @@ function rev_checkpoint_for(config, tape, dbody::Function, alg::Revolve, range)
     step = alg.steps
     # The first u-turn: `body` holds the state from just before the last step.
     dump_prim(alg.chkp_dump, step, body)
-    Enzyme.autodiff(
+    EnzymeCore.autodiff(
         EnzymeCore.set_runtime_activity(Reverse, config),
         Duplicated(body, dbody),
         Const,
@@ -521,7 +523,7 @@ function rev_checkpoint_for(config, tape, dbody::Function, alg::Revolve, range)
             end
         elseif (next_action.actionflag == Checkpointing.uturn)
             dump_prim(alg.chkp_dump, step, body)
-            Enzyme.autodiff(
+            EnzymeCore.autodiff(
                 EnzymeCore.set_runtime_activity(Reverse, config),
                 Duplicated(body, dbody),
                 Const,
