@@ -31,6 +31,18 @@ const FT = Vector{UInt8}
 # The schemes C holds a `data` pointer to, and the schedules running.
 const LIVE = IdDict{Any,Nothing}()
 
+# Julia 1.12's juliac builds on the default system image, whose LinearAlgebra
+# loads OpenBLAS when Julia starts (at the first call into this library), and
+# OpenBLAS starts a thread per core. Nothing here uses BLAS, but its idle
+# threads compete with the program for its cores: 6-7% more cycles in MITgcm.
+# As juliac itself does for other stdlibs (juliac-trim-stdlib.jl), replace
+# LinearAlgebra's __init__ in the image this builds.
+let LinearAlgebra = Base.maybe_root_module(
+        Base.PkgId(Base.UUID("37e2e46d-f89d-539d-b4ee-838fcccc9c8e"), "LinearAlgebra"),
+    )
+    LinearAlgebra === nothing || @eval LinearAlgebra __init__() = nothing
+end
+
 # The schemes as their constructors with the default storage make them.
 const NoStorage = Checkpointing.ArrayStorage{Nothing}
 
