@@ -70,13 +70,17 @@ end
 The shadow (adjoint) closure paired with an annotated loop body.
 
 Enzyme hands the loop body over as a `Duplicated`, `MixedDuplicated` or `Const`
-annotation. Picking the shadow apart with a chain of `isa` tests infers as
+annotation, or in vector mode (`EnzymeRules.width(config) > 1`) as a
+`BatchDuplicated` or `BatchMixedDuplicated`, whose shadow is a tuple with one
+closure per lane. Picking the shadow apart with a chain of `isa` tests infers as
 `Any`, which puts a dynamic dispatch at the entry to the whole reverse sweep and
 rebuilds `Duplicated(body, dbody)` from an `Any` on every iteration of the hot
 loop. Dispatching instead keeps the shadow's type concrete.
 """
 shadow(body::Duplicated) = body.dval
 shadow(body::MixedDuplicated) = body.dval[]
+shadow(body::BatchDuplicated) = body.dval
+shadow(body::BatchMixedDuplicated) = map(getindex, body.dval)
 
 function shadow(body::Const)
     # Mixed activity (a closure capturing both a mutable struct and scalars)
@@ -91,6 +95,42 @@ function shadow(body::Const)
 end
 
 shadow(body) = error("Checkpointing.jl: Unknown annotation type for body: $(typeof(body))")
+
+"""
+    adjoint_step!(config, body, dbody, args...)
+
+Differentiate one loop iteration `body(args...)` at the current primal state of
+`body`, accumulating its adjoint into the shadow closure `dbody`.
+
+In vector mode `dbody` is a tuple with one shadow closure per lane. The
+schedule, the checkpoints and the recomputation only touch the primal `body`,
+so a batched reverse sweep differs from a scalar one only here: each reversed
+iteration is differentiated once for all lanes. Enzyme takes the batch width
+from the arguments, not from the annotation of the function itself, so the
+batched body is passed as an argument to a `Const` trampoline.
+"""
+function adjoint_step!(config, body, dbody, args...)
+    Enzyme.autodiff(
+        EnzymeCore.set_runtime_activity(Reverse, config),
+        Duplicated(body, dbody),
+        Const,
+        args...,
+    )
+    return nothing
+end
+
+function adjoint_step!(config, body, dbody::NTuple{N,Any}, args...) where {N}
+    Enzyme.autodiff(
+        EnzymeCore.set_runtime_activity(Reverse, config),
+        Const(_call),
+        Const,
+        BatchDuplicated(body, dbody),
+        args...,
+    )
+    return nothing
+end
+
+_call(body, args...) = body(args...)
 
 function augmented_primal(
     config,
@@ -115,7 +155,7 @@ function reverse(
     ::Const{typeof(Checkpointing.checkpoint_for)},
     dret::Type{<:Const},
     tape,
-    body::Union{Const,Duplicated,MixedDuplicated},
+    body::Union{Const,Duplicated,MixedDuplicated,BatchDuplicated,BatchMixedDuplicated},
     alg,
     range,
 )
@@ -144,7 +184,7 @@ function reverse(
     ::Const{typeof(Checkpointing.checkpoint_while)},
     dret::Type{<:Const},
     tape,
-    body::Union{Const,Duplicated,MixedDuplicated},
+    body::Union{Const,Duplicated,MixedDuplicated,BatchDuplicated,BatchMixedDuplicated},
     alg,
 )
     scheme, fwd_tape = tape
