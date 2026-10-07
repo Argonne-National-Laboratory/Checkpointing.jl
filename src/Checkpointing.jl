@@ -1,5 +1,7 @@
 module Checkpointing
 
+import CheckpointingCore
+
 using Serialization
 import EnzymeCore
 
@@ -126,16 +128,35 @@ function __init__()
 end
 
 """
+    enzyme_marks_loops()
+
+Whether the loaded Enzyme.jl checkpoints a loop marked with
+CheckpointingCore's loop annotation itself.
+"""
+enzyme_marks_loops() = isdefined(Enzyme.Compiler, :keep_checkpoint_loops!)
+
+"""
     @ad_checkpoint(
         alg,
         loop,
     )
 
-This macro is supposed to be only used in conjunction with EnzymeRules. It does
-not initialize the shadowcopy. Apply the checkpointing scheme `alg` on the loop
-`loop` expression.
+Apply the checkpointing scheme `alg` on the loop `loop` expression.
+
+A `for` loop with `Revolve(k)` or `Periodic(k)` and a literal `k`, when the
+loaded Enzyme.jl checkpoints marked loops, stays a plain loop marked with
+CheckpointingCore's loop annotation: Enzyme reverses it with that schedule,
+and the loop body needs no closure. Otherwise the loop body becomes a
+closure that `checkpoint_for` or `checkpoint_while` runs, which the
+EnzymeRules reverse with `alg`; it does not initialize the shadow copy.
 """
 macro ad_checkpoint(alg, loop)
+    if loop isa Expr && loop.head === :for && enzyme_marks_loops()
+        s = CheckpointingCore.checkpoint_schedule(alg)
+        if s !== nothing && s[1] in (:revolve, :periodic)
+            return esc(CheckpointingCore.annotated_loop(s..., loop))
+        end
+    end
     body = loop.args[2]
     i = gensym()
     fbody = gensym("fbody")

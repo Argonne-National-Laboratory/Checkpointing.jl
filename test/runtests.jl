@@ -95,6 +95,9 @@ using HDF5
     include("burgers.jl")
     include("enzyme_abi.jl")
     include("enzyme_llvm.jl")
+    if Checkpointing.enzyme_marks_loops()
+        include("loop_marker.jl")
+    end
     @testset "Test writing checkpoints out" begin
         include("output_chkp.jl")
         @testset "$scheme" for scheme in [:Revolve, :Periodic]
