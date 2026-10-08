@@ -30,10 +30,15 @@ The budget is the number of checkpoints that live through the reverse sweep,
 never a segment length; without one, the schedule takes its default
 (about √n). The schedule is read from the macro's argument as written, so the
 budget must be a literal integer.
+
+Any other scheme (a variable holding one, keyword arguments, `Online_r2`,
+`EnzymeLLVM(...)`) is Checkpointing.jl's: the loop body becomes a closure that
+`checkpoint_for` or `checkpoint_while` runs, and Checkpointing.jl, which must
+be loaded, reverses it with that scheme.
 """
 module CheckpointingCore
 
-export @ad_checkpoint
+export @ad_checkpoint, checkpoint_for, checkpoint_while
 
 """The name of the loop annotation, as Enzyme reads it."""
 const LOOP_ANNOTATION = Symbol("enzyme.checkpoint")
@@ -115,24 +120,102 @@ function loop_checkpoint(loop::Expr)
     return nothing
 end
 
+const CHECKPOINTING = Base.PkgId(Base.UUID("eb46d486-4f9c-4c3d-b445-a617f2a2f1ca"), "Checkpointing")
+
+function not_a_scheme(scheme)
+    msg = if haskey(Base.loaded_modules, CHECKPOINTING)
+        "@ad_checkpoint takes Revolve(k), Binomial(k), Periodic(k) or StoreAll() with a " *
+        "literal budget, or one of Checkpointing.jl's schemes, not a $(typeof(scheme))"
+    else
+        "@ad_checkpoint with a $(typeof(scheme)) needs Checkpointing.jl: load it with " *
+        "`using Checkpointing`. Without it, @ad_checkpoint takes Revolve(k), Binomial(k), " *
+        "Periodic(k) or StoreAll() with a literal budget"
+    end
+    throw(ArgumentError(msg))
+end
+
+"""
+    checkpoint_for(body, scheme, range)
+
+Run `body(i)` for each `i` in `range`, reversed with `scheme`: what
+`@ad_checkpoint` makes of a `for` loop whose scheme is not one of the
+compiler's schedules. Checkpointing.jl adds the methods for its schemes.
+"""
+checkpoint_for(body, scheme, range) = not_a_scheme(scheme)
+
+"""
+    checkpoint_while(body, scheme)
+
+Run `body()` until it returns `false`, reversed with `scheme`: what
+`@ad_checkpoint` makes of a `while` loop whose scheme is not one of the
+compiler's schedules. Checkpointing.jl adds the methods for its schemes.
+"""
+checkpoint_while(body, scheme) = not_a_scheme(scheme)
+
+"""
+    scheme_loop(scheme, loop::Expr)
+
+`loop` as a closure run by `checkpoint_for` or `checkpoint_while` with
+`scheme`, an expression evaluated where the loop is.
+"""
+function scheme_loop(scheme, loop::Expr)
+    body = loop.args[2]
+    if loop.head === :for
+        iterator = loop.args[1].args[1]
+        i = gensym("i")
+        rng = gensym("range")
+        return quote
+            let
+                # Bind the range once: interpolating it at each use would
+                # evaluate the user's expression several times.
+                $rng = $(loop.args[1].args[2])
+                if !isa($rng, UnitRange{Int64})
+                    error(
+                        "@ad_checkpoint: only UnitRange{Int64} is supported, not $(typeof($rng))",
+                    )
+                end
+                $(GlobalRef(@__MODULE__, :checkpoint_for))(
+                    $i -> begin
+                        $iterator = $i
+                        $body
+                    end,
+                    $scheme,
+                    $rng,
+                )
+            end
+        end
+    else
+        return quote
+            let
+                $(GlobalRef(@__MODULE__, :checkpoint_while))(
+                    () -> begin
+                        $body
+                        # The loop goes on while its condition holds.
+                        return $(loop.args[1])
+                    end,
+                    $scheme,
+                )
+            end
+        end
+    end
+end
+
 """
     @ad_checkpoint schedule loop
 
-Mark `loop` (a `for` or `while` loop) for checkpointing with `schedule`, one
-of `Revolve(k)`, `Binomial(k)`, `Periodic(k)` or `StoreAll()` with a literal
-budget `k`. The loop itself is unchanged. Checkpointing.jl's `@ad_checkpoint`
-takes any of its schemes, and expands to this for these.
+Mark `loop` (a `for` or `while` loop) for checkpointing. With
+`Revolve(k)`, `Binomial(k)`, `Periodic(k)` or `StoreAll()` and a literal
+budget `k`, the loop itself is unchanged and carries the loop annotation.
+With any other scheme, which Checkpointing.jl provides and must be loaded
+for, the loop body becomes a closure run by `checkpoint_for` or
+`checkpoint_while`.
 """
 macro ad_checkpoint(schedule, loop)
+    loop isa Expr && loop.head in (:for, :while) ||
+        throw(ArgumentError("@ad_checkpoint applies to a for or a while loop"))
     s = checkpoint_schedule(schedule)
-    s === nothing && throw(
-        ArgumentError(
-            "CheckpointingCore.@ad_checkpoint takes Revolve(k), Binomial(k), Periodic(k) " *
-            "or StoreAll() with a literal budget, not $(schedule); Checkpointing.jl's " *
-            "@ad_checkpoint takes other schemes",
-        ),
-    )
-    return esc(annotated_loop(s..., loop))
+    s === nothing || return esc(annotated_loop(s..., loop))
+    return esc(scheme_loop(schedule, loop))
 end
 
 end

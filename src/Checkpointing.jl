@@ -1,6 +1,10 @@
 module Checkpointing
 
 import CheckpointingCore
+# One @ad_checkpoint: CheckpointingCore marks loops with the compiler's
+# schedules, and runs any other scheme through checkpoint_for and
+# checkpoint_while, whose methods for the schemes here are below.
+import CheckpointingCore: @ad_checkpoint, checkpoint_for, checkpoint_while
 
 using Serialization
 import EnzymeCore
@@ -134,71 +138,5 @@ Whether the loaded Enzyme.jl checkpoints a loop marked with
 CheckpointingCore's loop annotation itself.
 """
 enzyme_marks_loops() = isdefined(Enzyme.Compiler, :keep_checkpoint_loops!)
-
-"""
-    @ad_checkpoint(
-        alg,
-        loop,
-    )
-
-Apply the checkpointing scheme `alg` on the loop `loop` expression.
-
-A `for` loop with `Revolve(k)` or `Periodic(k)` and a literal `k`, when the
-loaded Enzyme.jl checkpoints marked loops, stays a plain loop marked with
-CheckpointingCore's loop annotation: Enzyme reverses it with that schedule,
-and the loop body needs no closure. Otherwise the loop body becomes a
-closure that `checkpoint_for` or `checkpoint_while` runs, which the
-EnzymeRules reverse with `alg`; it does not initialize the shadow copy.
-"""
-macro ad_checkpoint(alg, loop)
-    if loop isa Expr && loop.head === :for && enzyme_marks_loops()
-        s = CheckpointingCore.checkpoint_schedule(alg)
-        if s !== nothing && s[1] in (:revolve, :periodic)
-            return esc(CheckpointingCore.annotated_loop(s..., loop))
-        end
-    end
-    body = loop.args[2]
-    i = gensym()
-    fbody = gensym("fbody")
-    wbody = gensym("wbody")
-    rng = gensym("range")
-    if loop.head == :for
-        # Only reach into the loop header once the loop kind is known: a
-        # `while` condition may be a bare symbol, which has no `.args`.
-        _iterator = loop.args[1].args[1]
-        range = loop.args[1].args[2]
-        ex = quote
-            let
-                # Bind the range once -- interpolating `$range` at each use
-                # would evaluate the user's expression several times.
-                $rng = $range
-                if !isa($rng, UnitRange{Int64})
-                    error(
-                        "Checkpointing.jl: Only UnitRange{Int64} is supported. range = $(typeof($rng)) is not supported.",
-                    )
-                end
-                $fbody = $i -> begin
-                    $_iterator = $i
-                    $body
-                end
-                Checkpointing.checkpoint_for($fbody, $alg, $rng)
-            end
-        end
-    elseif loop.head == :while
-        ex = quote
-            let
-                $wbody = () -> begin
-                    $body
-                    # return loop condition
-                    return $(loop.args[1])
-                end
-                Checkpointing.checkpoint_while($wbody, $alg)
-            end
-        end
-    else
-        error("Checkpointing.jl: Unknown loop construct.")
-    end
-    esc(ex)
-end
 
 end

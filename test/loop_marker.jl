@@ -1,8 +1,9 @@
-# @ad_checkpoint on a for loop with a literal Revolve(k) or Periodic(k), when
-# the loaded Enzyme.jl checkpoints marked loops: the loop stays a plain loop
-# marked with CheckpointingCore's annotation, and Enzyme reverses it. The
-# gradient must be that of the loop without @ad_checkpoint, and of the same
-# loop through the closure path.
+# @ad_checkpoint is CheckpointingCore's one macro. A literal Revolve(k) or
+# Periodic(k) leaves a plain loop marked with the loop annotation, which
+# Enzyme reverses when the loaded Enzyme.jl checkpoints marked loops (and
+# differentiates as a plain loop otherwise). Any other scheme runs the body as
+# a closure through checkpoint_for. The gradient must be that of the loop
+# without @ad_checkpoint either way.
 using Checkpointing, Enzyme, Test
 import CheckpointingCore
 

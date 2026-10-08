@@ -35,7 +35,33 @@ end
     ex = expand("@ad_checkpoint Binomial(5) while t < n; t += 1; end")
     @test ex.head === :while
     @test loop_checkpoint(ex) == (:binomial, 5)
-    @test_throws Exception expand("@ad_checkpoint scheme for i in 1:n; end")
+    @test_throws Exception expand("@ad_checkpoint Revolve(3) begin; end")
+
+    # Any other scheme becomes a closure for Checkpointing.jl, which is not
+    # loaded here: running it says so.
+    ex = expand("@ad_checkpoint scheme for i in 1:n; end")
+    @test loop_checkpoint(ex) === nothing
+    ex = expand("@ad_checkpoint Revolve(k) while go(); end")
+    @test ex.head !== :while
+    function closure_loop(scheme, n)
+        y = 0.0
+        @ad_checkpoint scheme for i in 1:n
+            y += i
+        end
+        return y
+    end
+    err = try
+        closure_loop(:not_a_scheme, 3)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("needs Checkpointing.jl", err.msg)
+    # A scheme with methods runs the loop through them.
+    struct Sequential end
+    CheckpointingCore.checkpoint_for(body, ::Sequential, range) = foreach(body, range)
+    @test closure_loop(Sequential(), 4) == 10.0
 
     # The annotation changes nothing about running the loop.
     @test marked(0.3, 10) == plain(0.3, 10)
