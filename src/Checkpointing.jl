@@ -56,7 +56,8 @@ export @ad_checkpoint, checkpoint_for, checkpoint_while
 export instantiate
 export reset!
 export AbstractStorage, ArrayStorage, HDF5Storage
-export Revolve, Periodic, Online_r2
+export Revolve, Periodic, Online_r2, CAMS
+export cams_recomputations
 
 function serialize(x)
     s = IOBuffer()
@@ -100,6 +101,7 @@ include("ChkpDump.jl")
 include("Schemes/Revolve.jl")
 include("Schemes/Periodic.jl")
 include("Schemes/Online_r2.jl")
+include("Schemes/CAMS.jl")
 
 function checkpoint_for(body::Function, scheme::Scheme, range)
     for i in range

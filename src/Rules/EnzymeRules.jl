@@ -132,6 +132,152 @@ end
 
 _call(body, args...) = body(args...)
 
+"""
+    fwd_checkpoint_for(config, body::Annotation, alg, range) -> tape
+
+The forward half of a scheme as the rule calls it, with the Enzyme `config` and
+the annotated loop body. Most schemes only run and store the primal in their
+forward half and implement `fwd_checkpoint_for(body, alg, range)`, which this
+falls back to. A scheme that differentiates in the forward half already, as
+[`CAMS`](@ref) does to keep tapes, extends this method instead and gets the
+shadow from [`shadow`](@ref).
+"""
+fwd_checkpoint_for(config, body::Annotation, alg::Scheme, range) =
+    fwd_checkpoint_for(body.val, alg, range)
+
+# --- split mode ------------------------------------------------------------
+
+"""
+    split_thunks(config, body, dbody, I) -> (forward, reverse, Tape)
+
+Enzyme's split reverse mode for one loop iteration `body(::I)`: `forward` runs
+the iteration and returns a tape, from which `reverse` later accumulates the
+adjoint of that iteration into `dbody` without running it again. Used through
+[`tape_step!`](@ref) and [`adjoint_tape!`](@ref).
+
+The tape holds every value the reverse pass reads, so the state of `body` may
+change freely between the two calls.
+"""
+function split_thunks(config, body::FT, dbody, ::Type{I}) where {FT,I}
+    mode = EnzymeCore.set_runtime_activity(ReverseSplitNoPrimal, config)
+    forward, reverse = autodiff_thunk(mode, Duplicated{FT}, Const, Const{I})
+    return forward, reverse, Enzyme.tape_type(mode, Duplicated{FT}, Const, Const{I})
+end
+
+function split_thunks(config, body::FT, dbody::NTuple{N,Any}, ::Type{I}) where {FT,N,I}
+    mode = ReverseSplitWidth(
+        EnzymeCore.set_runtime_activity(ReverseSplitNoPrimal, config),
+        Val(N),
+    )
+    FA = Const{typeof(_call)}
+    BT = BatchDuplicated{FT,N}
+    forward, reverse = autodiff_thunk(mode, FA, Const, BT, Const{I})
+    return forward, reverse, Enzyme.tape_type(mode, FA, Const, BT, Const{I})
+end
+
+"""
+    tape_step!(forward, body, dbody, i) -> tape
+
+Run iteration `body(i)` forward in split mode and return its tape.
+"""
+tape_step!(forward, body, dbody, i) = forward(Duplicated(body, dbody), Const(i))[1]
+tape_step!(forward, body, dbody::NTuple{N,Any}, i) where {N} =
+    forward(Const(_call), BatchDuplicated(body, dbody), Const(i))[1]
+
+"""
+    adjoint_tape!(reverse, body, dbody, i, tape)
+
+Accumulate the adjoint of iteration `body(i)` into `dbody` from the `tape` that
+[`tape_step!`](@ref) returned for it. A tape can be used once.
+"""
+function adjoint_tape!(reverse, body, dbody, i, tape)
+    reverse(Duplicated(body, dbody), Const(i), tape)
+    return nothing
+end
+
+function adjoint_tape!(reverse, body, dbody::NTuple{N,Any}, i, tape) where {N}
+    reverse(Const(_call), BatchDuplicated(body, dbody), Const(i), tape)
+    return nothing
+end
+
+# --- CAMS ------------------------------------------------------------------
+
+function fwd_checkpoint_for(config, body::Annotation, alg::CAMS, range)
+    @assert alg.steps == length(range)
+    alg.steps == 0 && return nothing
+    dbody = shadow(body)
+    forward, reverse, Tape = split_thunks(config, body.val, dbody, eltype(range))
+    ntapes = 0
+    for act in alg.actions
+        act.kind == cams_tape && (ntapes = max(ntapes, act.b))
+    end
+    tapes = Vector{Tape}(undef, ntapes)
+    return _cams_forward(forward, reverse, tapes, body.val, dbody, alg, range)
+end
+
+# Behind a function barrier, so that the thunks and the tapes are concretely
+# typed in the sweep.
+function _cams_forward(forward, reverse, tapes, body, dbody, alg::CAMS, range)
+    actions = alg.actions
+    n = 1
+    while true
+        act = actions[n]
+        if act.kind == cams_advance
+            for j = act.a:act.b
+                body(range[j])
+            end
+        elseif act.kind == cams_store
+            save!(alg.storage, body, act.a)
+        elseif act.kind == cams_tape
+            tapes[act.b] = tape_step!(forward, body, dbody, range[act.a])
+        elseif act.kind == cams_adjoint
+            # The first step to be adjoined is the last one of the loop. It is
+            # run in split mode, which leaves `body` in the final state, and
+            # its tape is handed to the reverse pass.
+            @assert act.a == alg.steps
+            last = tape_step!(forward, body, dbody, range[act.a])
+            # The reverse sweep recomputes on `body` itself, which the tapes
+            # are tied to, and puts the final state back when it is done.
+            return (forward, reverse, tapes, last, checkpoint_alloc(body), body, n)
+        else
+            error("CAMS: unexpected action $(act.kind) before the first adjoint")
+        end
+        n += 1
+    end
+end
+
+function rev_checkpoint_for(config, tape, dbody, alg::CAMS, range)
+    tape === nothing && return nothing
+    forward, reverse, tapes, last, final, body, n = tape
+    _cams_reverse(config, forward, reverse, tapes, last, body, dbody, alg, range, n)
+    checkpoint_copy!(body, final)
+    return nothing
+end
+
+function _cams_reverse(config, forward, reverse, tapes, last, body, dbody, alg, range, n)
+    actions = alg.actions
+    adjoint_tape!(reverse, body, dbody, range[actions[n].a], last)
+    for m = (n+1):length(actions)
+        act = actions[m]
+        if act.kind == cams_advance
+            for j = act.a:act.b
+                body(range[j])
+            end
+        elseif act.kind == cams_store
+            save!(alg.storage, body, act.a)
+        elseif act.kind == cams_restore
+            load!(body, alg.storage, act.a)
+        elseif act.kind == cams_tape
+            tapes[act.b] = tape_step!(forward, body, dbody, range[act.a])
+        elseif act.kind == cams_adjoint
+            adjoint_step!(config, body, dbody, Const(range[act.a]))
+        else
+            adjoint_tape!(reverse, body, dbody, range[act.a], tapes[act.b])
+        end
+    end
+    return nothing
+end
+
 function augmented_primal(
     config,
     func::Const{typeof(Checkpointing.checkpoint_for)},
@@ -146,7 +292,7 @@ function augmented_primal(
     # running a plain loop here and replaying that sweep from the initial state
     # in `reverse` did the whole forward pass twice.
     scheme = instantiate(typeof(body.val), alg.val, length(range.val))
-    fwd_tape = Checkpointing.fwd_checkpoint_for(body.val, scheme, range.val)
+    fwd_tape = Checkpointing.fwd_checkpoint_for(config, body, scheme, range.val)
     return AugmentedReturn(nothing, nothing, (scheme, fwd_tape))
 end
 

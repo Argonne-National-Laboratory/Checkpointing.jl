@@ -14,6 +14,8 @@ CurrentModule = Checkpointing
 Revolve
 Periodic
 Online_r2
+CAMS
+cams_recomputations
 
 ```
 
