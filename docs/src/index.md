@@ -9,6 +9,7 @@ The schemes are agnostic to the AD tool being used and can be easily interfaced 
 ## Scheme
 * Revolve/Binomial checkpointing [1]
 * Periodic checkpointing
+* CAMS: checkpointing of states and tapes for loops whose iterations are expensive to recompute [3]
 * Online r=2 checkpointing for a while loops with a priori unknown number of iterations [2]
 
 ## Rules
@@ -42,3 +43,5 @@ Depth = 1
 [1] Andreas Griewank and Andrea Walther. 2000. Algorithm 799: revolve: an implementation of checkpointing for the reverse or adjoint mode of computational differentiation. ACM Trans. Math. Softw. 26, 1 (March 2000), 19–45. DOI:https://doi.org/10.1145/347837.347846
 
 [2] Philipp Stumm and Andrea Walther. 2010. New algorithms for optimal online checkpointing. SIAM J. Sci. Comput. 32, 2, 836–854. DOI:https://doi.org/10.1137/080742439
+
+[3] Hong Zhang and Emil M. Constantinescu. 2023. Optimal checkpointing for adjoint multistage time-stepping schemes. J. Comput. Sci. 66, 101913. DOI:https://doi.org/10.1016/j.jocs.2022.101913

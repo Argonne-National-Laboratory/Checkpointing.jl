@@ -35,3 +35,33 @@ These four functions are unexported, so a new scheme extends `Checkpointing.fwd_
 ```julia
 Checkpointing.adjoint_step!(config, body, dbody, Const(i))
 ```
+
+## Tapes as checkpoints: CAMS
+
+[`Revolve`](@ref) stores the state an iteration starts from, so `adjoint_step!` runs that iteration forward once more before it differentiates it. [`CAMS`](@ref) can also keep the tape of an iteration, which is what Enzyme's reverse pass reads, and differentiate the iteration from that without running it again:
+```julia
+scheme = CAMS(20; stage_units = 1)
+```
+The budget is counted in units of one state checkpoint, and `stage_units` is the size of one tape in those units. The schedule decides per checkpoint whether a state or a tape is the better use of memory. With enough units to tape every iteration nothing is recomputed; with a tape too large to fit, the schedule is Revolve's.
+
+Whether this is faster depends on what an iteration costs to run compared to what it costs to differentiate. An explicit step differentiated by Enzyme is cheap to run again and its tape is as large as the state or larger, so Revolve is the better choice. An implicit step whose nonlinear solve has a reverse rule from the implicit function theorem is the opposite case: running it is a Newton solve, its adjoint is one linear solve, and its tape is little more than the solution. On an implicit Euler discretization of Burgers' equation with 200 steps, where each step is one Newton-Krylov solve, the number of solves in the forward and reverse pass together is:
+
+| units | `Revolve(units)` | `CAMS(units; stage_units = 2)` | `CAMS(units; stage_units = 1)` |
+|---:|---:|---:|---:|
+| 3 | 1506 | 1504 | 1487 |
+| 5 | 991 | 974 | 914 |
+| 10 | 723 | 652 | 561 |
+| 20 | 579 | 488 | 394 |
+| 40 | 559 | 385 | 364 |
+
+[`cams_recomputations`](@ref) gives these counts, less the 200 solves of the loop itself, without running anything.
+
+A scheme that differentiates in its forward half, as CAMS does to keep tapes from the first sweep, needs the Enzyme config and the shadow there. It extends the method of `fwd_checkpoint_for` that the rule calls, which takes the config and the annotated loop body and by default forwards to the three-argument method above:
+```julia
+function Checkpointing.fwd_checkpoint_for(config, body::Enzyme.Annotation, alg::MyScheme, range)
+    dbody = Checkpointing.shadow(body)
+    forward, reverse, Tape = Checkpointing.split_thunks(config, body.val, dbody, eltype(range))
+    ...
+end
+```
+`Checkpointing.tape_step!(forward, body, dbody, i)` runs iteration `i` and returns its tape, and `Checkpointing.adjoint_tape!(reverse, body, dbody, i, tape)` later accumulates the adjoint of that iteration from it. A tape holds everything the reverse pass reads, so the state of `body` may change in between, and it can be used once.
